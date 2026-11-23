@@ -23,6 +23,7 @@ class GrokGameModule : GameModule {
     private var pendingAction: GameAction? = null
 
     private var lastRequestAt = 0L
+    @Volatile private var backoffUntil = 0L
     private var lastActionAt = 0L
     private var lastSignature: IntArray? = null
 
@@ -32,6 +33,7 @@ class GrokGameModule : GameModule {
     override fun decide(frame: Bitmap): GameAction {
         val now = System.currentTimeMillis()
         if (now - lastActionAt < ACTION_GAP_MS) return GameAction.Wait
+        if (now < backoffUntil) return GameAction.Wait
 
         synchronized(this) {
             val ready = pendingAction
@@ -46,7 +48,10 @@ class GrokGameModule : GameModule {
         val previous = lastSignature
         val changed = previous == null || diff(previous, sig) > CHANGE_THRESHOLD
 
-        if (!pending && changed && now - lastRequestAt > REQUEST_GAP_MS) {
+        // Ask again when the screen changed, or after a quiet period. The quiet period stops the bot
+        // from freezing when a tap did nothing and the screen stayed the same.
+        val heartbeat = now - lastRequestAt > HEARTBEAT_MS
+        if (!pending && (changed || heartbeat) && now - lastRequestAt > REQUEST_GAP_MS) {
             lastRequestAt = now
             lastSignature = sig
             pending = true
@@ -66,6 +71,9 @@ class GrokGameModule : GameModule {
                     if (action != null) {
                         synchronized(this) { pendingAction = action }
                     }
+                } catch (e: RateLimitException) {
+                    backoffUntil = System.currentTimeMillis() + e.retryAfterSeconds * 1000L
+                    AdviceLog.error("سقف سرعت Groq پر شد؛ ${e.retryAfterSeconds} ثانیه صبر می‌کند")
                 } catch (e: Exception) {
                     AdviceLog.error(e.message ?: "خطای نامشخص")
                 } finally {
@@ -109,7 +117,7 @@ class GrokGameModule : GameModule {
     }
 
     private fun scaledCopy(frame: Bitmap): Bitmap {
-        val w = 540
+        val w = 1080
         val h = (frame.height.toFloat() * w / frame.width).toInt().coerceAtLeast(1)
         val scaled = Bitmap.createScaledBitmap(frame, w, h, true)
         // createScaledBitmap may return the same object. Make a real copy in that case.
@@ -118,7 +126,8 @@ class GrokGameModule : GameModule {
 
     companion object {
         private const val ACTION_GAP_MS = 1200L
-        private const val REQUEST_GAP_MS = 2500L
+        private const val REQUEST_GAP_MS = 12000L
+        private const val HEARTBEAT_MS = 25000L
         private const val CHANGE_THRESHOLD = 6
         private const val GRID = 16
     }

@@ -9,12 +9,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** Sends one screenshot to the Grok chat API and returns the parsed advice. */
+class RateLimitException(val retryAfterSeconds: Long) : Exception("محدودیت سرعت Groq")
+
 object GrokClient {
 
     private const val PROMPT = """
 You are the controller of an Android phone that plays OFFLINE games for the user, against the computer or alone.
 Look at the screenshot and work out, from the picture only:
-1. Which game it is, and the state: whose turn it is, what the dice or cards show, what pieces or units are where.
+1. Which game it is, and the state: whose turn it is, what pieces or units are where.
+   The dice number: count the dots on the dice face carefully, one by one. Do not guess. Put it in the "screen" text as dice=N (or dice=none if no dice is shown).
 2. Whether it is the PLAYER's turn. Common signs: a highlighted name or ring around "You", a glowing roll button, a message such as "your turn". If the computer or an animation is moving, the answer is no.
 3. The legal options right now, using the game's rules as you know them.
 
@@ -36,7 +39,7 @@ For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait
 
     fun askForAction(apiKey: String, endpoint: String, model: String, frame: Bitmap): Advice {
         val jpeg = ByteArrayOutputStream().use { out ->
-            frame.compress(Bitmap.CompressFormat.JPEG, 70, out)
+            frame.compress(Bitmap.CompressFormat.JPEG, 85, out)
             out.toByteArray()
         }
         val b64 = Base64.encodeToString(jpeg, Base64.NO_WRAP)
@@ -72,6 +75,9 @@ For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait
             val code = conn.responseCode
             val stream = if (code in 200..299) conn.inputStream else conn.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
+            if (code == 429) {
+                throw RateLimitException(conn.getHeaderField("retry-after")?.toLongOrNull() ?: 30L)
+            }
             if (code !in 200..299) {
                 throw IllegalStateException("HTTP $code: ${text.take(200)}")
             }

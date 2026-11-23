@@ -4,10 +4,10 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 android {
-    namespace = "com.clashai.companion"
+    namespace = "com.aiplayer.companion"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.clashai.companion"
+        applicationId = "com.aiplayer.companion"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

@@ -227,7 +227,6 @@ class ScreenCaptureService : Service() {
      * این نسخه کارت‌ها، سربازها یا اکسیر را با دقت تشخیص نمی‌دهد.
      */
     private fun analyzeFrame(image: Image) {
-        FrameBus.publishImage(image)
         try {
             val plane = image.planes.firstOrNull() ?: return
             val buffer = plane.buffer

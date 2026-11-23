@@ -43,13 +43,28 @@ object AgentLoop {
         handler.removeCallbacks(tick)
     }
 
+    @Volatile
+    private var capturing = false
+
     private fun step() {
         val service = AutoPlayAccessibilityService.instance ?: return
+        val pkg = service.currentPackage()
+        if (pkg == null || pkg == OWN_PACKAGE) {
+            FrameBus.take()?.recycle()
+            return
+        }
+
+        // Ask for a fresh screenshot. Only one request at a time.
+        if (!capturing) {
+            capturing = true
+            service.captureFrame { bmp ->
+                capturing = false
+                if (bmp != null) FrameBus.publish(bmp)
+            }
+        }
+
         val frame = FrameBus.take() ?: return
         try {
-            val pkg = service.currentPackage()
-            if (pkg == null || pkg == OWN_PACKAGE) return
-
             val module = GameRegistry.find(pkg, frame) ?: return
             val action = module.decide(frame)
             service.perform(action)

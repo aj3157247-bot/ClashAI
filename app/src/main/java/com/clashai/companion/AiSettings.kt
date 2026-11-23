@@ -55,6 +55,10 @@ object AdviceLog {
         lastText = "بازی: ${advice.game} | صفحه: ${advice.screen} | ${advice.reason}"
     }
 
+    fun info(message: String) {
+        lastText = message
+    }
+
     fun error(message: String) {
         lastText = "خطا: $message"
     }

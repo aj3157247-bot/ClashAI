@@ -2,7 +2,10 @@ package com.aiplayer.companion
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.graphics.Bitmap
 import android.graphics.Path
+import android.os.Build
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 
 /**
@@ -26,6 +29,37 @@ class AutoPlayAccessibilityService : AccessibilityService() {
     }
 
     fun currentPackage(): String? = rootInActiveWindow?.packageName?.toString()
+
+    /**
+     * Takes a screenshot on demand (Android 11+). Unlike MediaProjection, this works
+     * even when the game screen is static. The callback runs on the main thread.
+     */
+    fun captureFrame(onResult: (Bitmap?) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            onResult(null)
+            return
+        }
+        takeScreenshot(
+            Display.DEFAULT_DISPLAY,
+            mainExecutor,
+            object : AccessibilityService.TakeScreenshotCallback {
+                override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                    val hardware = Bitmap.wrapHardwareBuffer(
+                        screenshot.hardwareBuffer,
+                        screenshot.colorSpace
+                    )
+                    val software = hardware?.copy(Bitmap.Config.ARGB_8888, false)
+                    hardware?.recycle()
+                    screenshot.hardwareBuffer.close()
+                    onResult(software)
+                }
+
+                override fun onFailure(errorCode: Int) {
+                    onResult(null)
+                }
+            }
+        )
+    }
 
     fun perform(action: GameAction) {
         val metrics = resources.displayMetrics

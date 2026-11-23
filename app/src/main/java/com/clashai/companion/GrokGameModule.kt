@@ -57,6 +57,7 @@ class GrokGameModule : GameModule {
             val model = AiSettings.model
             val endpoint = AiSettings.endpoint
 
+            AdviceLog.info("در حال ارسال تصویر بازی به هوش مصنوعی...")
             worker.execute {
                 try {
                     val advice = GrokClient.askForAction(key, endpoint, model, small)

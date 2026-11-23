@@ -55,10 +55,11 @@ class GrokGameModule : GameModule {
             val small = scaledCopy(frame)
             val key = AiSettings.apiKey
             val model = AiSettings.model
+            val endpoint = AiSettings.endpoint
 
             worker.execute {
                 try {
-                    val advice = GrokClient.askForAction(key, model, small)
+                    val advice = GrokClient.askForAction(key, endpoint, model, small)
                     AdviceLog.update(advice)
                     val action = toAction(advice)
                     if (action != null) {

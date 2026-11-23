@@ -12,8 +12,11 @@ object AiSettings {
     private const val PREFS = "ai_player_settings"
     private const val KEY_API = "grok_api_key"
     private const val KEY_MODEL = "grok_model"
+    private const val KEY_ENDPOINT = "api_endpoint"
 
-    const val DEFAULT_MODEL = "grok-4"
+    // Groq is OpenAI-compatible. Use https://api.x.ai/v1/chat/completions for xAI keys.
+    const val DEFAULT_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+    const val DEFAULT_MODEL = "qwen/qwen3.8-27b"
 
     @Volatile
     private var prefs: SharedPreferences? = null
@@ -28,6 +31,12 @@ object AiSettings {
         get() = prefs?.getString(KEY_API, "") ?: ""
         set(value) {
             prefs?.edit()?.putString(KEY_API, value.trim())?.apply()
+        }
+
+    var endpoint: String
+        get() = prefs?.getString(KEY_ENDPOINT, DEFAULT_ENDPOINT)?.takeIf { it.isNotBlank() } ?: DEFAULT_ENDPOINT
+        set(value) {
+            prefs?.edit()?.putString(KEY_ENDPOINT, value.trim())?.apply()
         }
 
     var model: String

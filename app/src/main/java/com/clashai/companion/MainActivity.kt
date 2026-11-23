@@ -45,6 +45,7 @@ fun UniversalGameAI() {
     var adviceText by remember { mutableStateOf(AdviceLog.lastText) }
     var keyText by remember { mutableStateOf(AiSettings.apiKey) }
     var modelText by remember { mutableStateOf(AiSettings.model) }
+    var endpointText by remember { mutableStateOf(AiSettings.endpoint) }
     var showKey by remember { mutableStateOf(false) }
 
     // Re-check the accessibility service every second, because the user enables it in another screen.
@@ -139,7 +140,7 @@ fun UniversalGameAI() {
                 ) { Text("نمایش دکمه‌ی شناور") }
 
                 HorizontalDivider()
-                Text("هوش مصنوعی Grok (برای بازی‌های عمومی)", style = MaterialTheme.typography.titleMedium)
+                Text("هوش مصنوعی (برای بازی‌های عمومی)", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
                     value = keyText,
                     onValueChange = { keyText = it },
@@ -157,9 +158,16 @@ fun UniversalGameAI() {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(if (showKey) "پنهان کردن کلید" else "نمایش کلید") }
                 OutlinedTextField(
+                    value = endpointText,
+                    onValueChange = { endpointText = it },
+                    label = { Text("آدرس API (Groq پیش‌فرض است)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
                     value = modelText,
                     onValueChange = { modelText = it },
-                    label = { Text("نام مدل (باید با docs.x.ai یکی باشد)") },
+                    label = { Text("نام مدل (vision، از console.groq.com/docs/vision)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -167,6 +175,7 @@ fun UniversalGameAI() {
                     onClick = {
                         AiSettings.apiKey = keyText
                         AiSettings.model = modelText
+                        AiSettings.endpoint = endpointText
                         status = if (keyText.isBlank()) "کلید خالی است" else "تنظیمات Grok ذخیره شد"
                     },
                     modifier = Modifier.fillMaxWidth()

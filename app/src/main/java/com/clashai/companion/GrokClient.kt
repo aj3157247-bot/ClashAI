@@ -11,8 +11,6 @@ import java.net.URL
 /** Sends one screenshot to the Grok chat API and returns the parsed advice. */
 object GrokClient {
 
-    private const val ENDPOINT = "https://api.x.ai/v1/chat/completions"
-
     private const val PROMPT = """
 You are the controller of an Android phone that plays OFFLINE single-player or computer-opponent games.
 Look at the screenshot. Work out which game it is and what state it is in, from the picture alone.
@@ -31,7 +29,7 @@ Respond with ONLY a JSON object, no markdown, in exactly this shape:
 For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait" the coordinates are ignored.
 """
 
-    fun askForAction(apiKey: String, model: String, frame: Bitmap): Advice {
+    fun askForAction(apiKey: String, endpoint: String, model: String, frame: Bitmap): Advice {
         val jpeg = ByteArrayOutputStream().use { out ->
             frame.compress(Bitmap.CompressFormat.JPEG, 70, out)
             out.toByteArray()
@@ -55,7 +53,7 @@ For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait
             .put("max_tokens", 300)
             .put("messages", JSONArray().put(message))
 
-        val conn = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
             readTimeout = 60_000

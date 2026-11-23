@@ -21,7 +21,7 @@ Look at the screenshot and work out, from the picture only:
 Then choose exactly ONE next action that is best for the player:
 - If it is the player's turn and the dice has not been rolled yet, tap the roll button (the button that rolls the dice, not a number display).
 - If the dice shows a number, choose the legal piece move that is strongest: capture an opponent when possible, leave home with a 6, move a piece into its home lane or finish, and prefer safe squares when an opponent could capture next.
-- If the dice shows a number but no move is legal for it, choose wait.
+- If the dice shows a number but no move is legal for it, the turn usually ends by itself or needs the roll/next button. If a roll, pass, or next-turn button is visible and it is the player's turn, tap that button. Only choose wait if no such button is visible.
 - If it is not the player's turn, or an animation is running, or a dialog is open, choose wait.
 - For card, tile, puzzle, or menu games, pick the move that makes the most progress under the rules, and tap "continue", "play", or "next" when the game waits for it.
 
@@ -30,7 +30,7 @@ Coordinates are normalized to 0..1 over the whole screenshot. (0,0) is the top-l
 Never tap ads or banners, purchase, buy, subscribe, or reward buttons, system notifications, links to other apps, incoming calls, or chat or dating popups.
 
 Respond with ONLY a JSON object, no markdown, in exactly this shape:
-{"game":"short game name or unknown","screen":"short description of the state and whose turn it is","action":{"type":"tap|swipe|hold|wait","x":0.0,"y":0.0,"x2":0.0,"y2":0.0},"reason":"one short sentence"}
+{"game":"short game name or unknown","screen":"short description of the state and whose turn it is","action":{"type":"tap|swipe|hold|wait","x":0.0,"y":0.0,"x2":0.0,"y2":0.0},"reason":"one short sentence written in Persian (Farsi)"}
 For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait" the coordinates are ignored.
 """
 

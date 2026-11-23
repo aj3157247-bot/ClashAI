@@ -46,6 +46,10 @@ object AgentLoop {
     @Volatile
     private var capturing = false
 
+    // Android allows only a few screenshots per second, so space them out.
+    private const val CAPTURE_GAP_MS = 1500L
+    private var lastCaptureAt = 0L
+
     private fun step() {
         val service = AutoPlayAccessibilityService.instance ?: return
         val pkg = service.currentPackage()
@@ -55,8 +59,10 @@ object AgentLoop {
         }
 
         // Ask for a fresh screenshot. Only one request at a time.
-        if (!capturing) {
+        val now = System.currentTimeMillis()
+        if (!capturing && now - lastCaptureAt >= CAPTURE_GAP_MS) {
             capturing = true
+            lastCaptureAt = now
             service.captureFrame { bmp ->
                 capturing = false
                 if (bmp != null) FrameBus.publish(bmp)

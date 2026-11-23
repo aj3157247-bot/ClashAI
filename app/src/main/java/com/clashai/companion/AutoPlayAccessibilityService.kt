@@ -2,6 +2,7 @@ package com.aiplayer.companion
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import androidx.annotation.RequiresApi
 import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Build
@@ -34,8 +35,11 @@ class AutoPlayAccessibilityService : AccessibilityService() {
      * Takes a screenshot on demand (Android 11+). Unlike MediaProjection, this works
      * even when the game screen is static. The callback runs on the main thread.
      */
+    @RequiresApi(Build.VERSION_CODES.R)
     fun captureFrame(onResult: (Bitmap?) -> Unit) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            // wrapHardwareBuffer needs Android 12 or newer.
+            AdviceLog.error("اسکرین‌شات از اندروید ۱۲ به بالا پشتیبانی می‌شود.")
             onResult(null)
             return
         }
@@ -56,7 +60,12 @@ class AutoPlayAccessibilityService : AccessibilityService() {
                     }
 
                     override fun onFailure(errorCode: Int) {
-                        AdviceLog.error("اسکرین‌شات ناموفق بود (کد $errorCode). canTakeScreenshot را بررسی کن.")
+                        val reason = when (errorCode) {
+                            3 -> "درخواست اسکرین‌شات خیلی سریع فرستاده شد"
+                            2 -> "دسترسی سرویس به اسکرین‌شات داده نشده"
+                            else -> "خطای سیستم"
+                        }
+                        AdviceLog.error("اسکرین‌شات ناموفق بود: $reason (کد $errorCode)")
                         onResult(null)
                     }
                 }

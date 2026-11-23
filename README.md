@@ -1,6 +1,6 @@
-# Clash AI Coach (Android)
+# AI Player (Android)
 
-نسخه آغازین یک همراه هوشمند اندروید برای Clash Royale.
+نسخه آغازین یک بازیکن هوشمند اندروید برای بازی‌های آفلاین و تک‌نفره.
 
 ## وضعیت فعلی
 - پروژه بومی Android/Kotlin با Jetpack Compose
@@ -11,11 +11,11 @@
 **توجه:** این نسخه هنوز مدل بینایی کامپیوتری، تشخیص کارت، موتور تصمیم‌گیری یا کنترل بازی ندارد. این‌ها مراحل بعدی توسعه‌اند. ابتدا تحلیل تصویر و پیشنهاد حرکت را در محیط آفلاین پیاده‌سازی و آزمایش می‌کنیم.
 
 ## ساخت APK با GitHub
-1. یک repository جدید به نام `ClashAI` در GitHub بساز.
+1. یک repository جدید به نام `AIPlayer` در GitHub بساز.
 2. تمام محتویات این پوشه را در ریشه repository بارگذاری کن.
 3. به تب **Actions** برو.
-4. workflow با نام **Build Clash AI Android APK** را اجرا کن یا پس از push منتظر بمان.
-5. در اجرای موفق، از بخش Artifacts فایل `clash-ai-coach-debug-apk` را دریافت کن.
+4. workflow با نام **Build AI Player Android APK** را اجرا کن یا پس از push منتظر بمان.
+5. در اجرای موفق، از بخش Artifacts فایل `ai-player-debug-apk` را دریافت کن.
 
 ## نیازمندی‌های توسعه محلی
 - JDK 17

@@ -29,14 +29,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlin.random.Random
 
-private data class SimCard(
+data class SimCard(
     val name: String,
     val cost: Int,
     val attack: Float,
     val defense: Float
 )
 
-private data class SimResult(
+data class SimResult(
     val winner: Int,
     val playerTower: Float,
     val rivalTower: Float,
@@ -45,7 +45,7 @@ private data class SimResult(
     val rivalDamage: Float
 )
 
-private data class TournamentResult(
+data class TournamentResult(
     val games: Int,
     val wins: Int,
     val losses: Int,
@@ -55,7 +55,7 @@ private data class TournamentResult(
     val last: SimResult
 )
 
-private object ClashSimulationEngine {
+object ClashSimulationEngine {
     private val cards = listOf(
         SimCard("Knight", 3, 5.0f, 5.0f),
         SimCard("Archers", 3, 5.5f, 3.0f),

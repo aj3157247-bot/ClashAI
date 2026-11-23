@@ -127,12 +127,20 @@ private object ClashBattleSimulator {
     ): SimCard? {
         val affordable = deck.filter { it.cost <= elixir }
         if (affordable.isEmpty()) return null
+
         return affordable.maxByOrNull { card ->
-            val airBonus = if (enemyAir && card.air) 5 else 0
-            val splashBonus = if (random.nextInt(100) < 25 && card.splash) 2 else 0
-            val roleBias = if (player) card.attack * aggressionWeight + card.defense * defenseWeight
-                           else card.attack + card.defense
-            roleBias + airBonus + splashBonus - card.cost * 0.7
+            val airBonus = if (enemyAir && card.air) 5.0 else 0.0
+            val splashBonus = if (random.nextInt(100) < 25 && card.splash) 2.0 else 0.0
+
+            // Keep both branches Double so Kotlin can resolve arithmetic consistently.
+            val roleBias: Double = if (player) {
+                card.attack.toDouble() * aggressionWeight +
+                    card.defense.toDouble() * defenseWeight
+            } else {
+                (card.attack + card.defense).toDouble()
+            }
+
+            roleBias + airBonus + splashBonus - card.cost.toDouble() * 0.7
         }
     }
 }

@@ -1,4 +1,4 @@
-package com.clashai.companion
+package com.aiplayer.companion
 
 data class GameState(
     val score: Int = 0,

@@ -1,4 +1,4 @@
-package com.clashai.companion
+package com.aiplayer.companion
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -25,9 +25,9 @@ import kotlin.math.max
 class ScreenCaptureService : Service() {
 
     companion object {
-        const val ACTION_START = "com.clashai.companion.CAPTURE_START"
-        const val ACTION_STOP = "com.clashai.companion.CAPTURE_STOP"
-        const val ACTION_FRAME = "com.clashai.companion.CAPTURE_FRAME"
+        const val ACTION_START = "com.aiplayer.companion.CAPTURE_START"
+        const val ACTION_STOP = "com.aiplayer.companion.CAPTURE_STOP"
+        const val ACTION_FRAME = "com.aiplayer.companion.CAPTURE_FRAME"
 
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_DATA = "projection_data"
@@ -38,7 +38,7 @@ class ScreenCaptureService : Service() {
         const val EXTRA_BLUE = "blue"
         const val EXTRA_DESCRIPTION = "description"
 
-        private const val CHANNEL_ID = "clash_ai_screen_capture"
+        private const val CHANNEL_ID = "ai_player_screen_capture"
         private const val NOTIFICATION_ID = 1001
     }
 
@@ -139,7 +139,7 @@ class ScreenCaptureService : Service() {
                 return
             }
 
-            workerThread = HandlerThread("ClashAIFrameAnalyzer").also {
+            workerThread = HandlerThread("AIPlayerFrameAnalyzer").also {
                 it.start()
             }
 
@@ -181,7 +181,7 @@ class ScreenCaptureService : Service() {
             )
 
             virtualDisplay = currentProjection.createVirtualDisplay(
-                "ClashAI-ScreenObserver",
+                "AIPlayer-ScreenObserver",
                 width,
                 height,
                 density,
@@ -351,7 +351,7 @@ class ScreenCaptureService : Service() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "ClashAI Screen Observer",
+                "AI Player Screen Observer",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
                 description = "مشاهده صفحه با اجازه کاربر"
@@ -367,7 +367,7 @@ class ScreenCaptureService : Service() {
     private fun buildNotification(): Notification {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
-                .setContentTitle("ClashAI فعال است")
+                .setContentTitle("AI Player فعال است")
                 .setContentText("مشاهده صفحه با اجازه شما در حال اجراست.")
                 .setSmallIcon(android.R.drawable.ic_menu_view)
                 .setOngoing(true)
@@ -375,7 +375,7 @@ class ScreenCaptureService : Service() {
         } else {
             @Suppress("DEPRECATION")
             Notification.Builder(this)
-                .setContentTitle("ClashAI فعال است")
+                .setContentTitle("AI Player فعال است")
                 .setContentText("مشاهده صفحه فعال است.")
                 .setSmallIcon(android.R.drawable.ic_menu_view)
                 .setOngoing(true)

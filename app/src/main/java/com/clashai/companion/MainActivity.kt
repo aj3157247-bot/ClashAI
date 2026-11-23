@@ -1,4 +1,4 @@
-package com.clashai.companion
+package com.aiplayer.companion
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity

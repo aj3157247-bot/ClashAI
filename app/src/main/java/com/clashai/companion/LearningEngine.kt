@@ -1,4 +1,4 @@
-package com.clashai.companion
+package com.aiplayer.companion
 
 data class LearningRecord(
     val action: String,

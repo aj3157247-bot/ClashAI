@@ -76,9 +76,9 @@ class LudoModule : GameModule {
 object LudoLayout {
     const val ACTION_COOLDOWN_MS = 1500L
 
-    // Dice button at the bottom center.
+    // Roll button: the orange spinner above the dice display (not the dice display itself).
     const val DICE_X = 0.5f
-    const val DICE_Y = 0.946f
+    const val DICE_Y = 0.888f
 
     // Centers of the four home circles in the blue (bottom-left) quarter.
     val HOME_SPOTS: List<Pair<Float, Float>> = listOf(

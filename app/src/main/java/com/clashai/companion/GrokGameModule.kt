@@ -58,6 +58,9 @@ class GrokGameModule : GameModule {
 
             // The frame is recycled by AgentLoop after this call, so send a copy.
             val small = scaledCopy(frame)
+            val sentW = small.width.toFloat()
+            val sentH = small.height.toFloat()
+            val sentH = small.height.toFloat()
             val key = AiSettings.apiKey
             val model = AiSettings.model
             val endpoint = AiSettings.endpoint
@@ -67,7 +70,8 @@ class GrokGameModule : GameModule {
                 try {
                     val advice = GrokClient.askForAction(key, endpoint, model, small)
                     AdviceLog.update(advice)
-                    val action = toAction(advice)
+                    val action = toAction(advice, sentW, sentH)
+                    AdviceLog.info(AdviceLog.lastText + " | " + describe(action))
                     if (action != null) {
                         synchronized(this) { pendingAction = action }
                     }
@@ -85,15 +89,27 @@ class GrokGameModule : GameModule {
         return GameAction.Wait
     }
 
-    private fun toAction(a: Advice): GameAction? {
-        val x1 = a.x.coerceIn(0f, 1f)
-        val y1 = a.y.coerceIn(0f, 1f)
+    /**
+     * Converts the model's answer into a tap. The model is told to use 0..1, but sometimes it
+     * answers in pixels of the image it saw. Values above 1 are treated as pixels and divided by the image size.
+     */
+    private fun toAction(a: Advice, imageW: Float, imageH: Float): GameAction? {
+        fun norm(v: Float, size: Float): Float = (if (v > 1f) v / size else v).coerceIn(0f, 1f)
+        val x1 = norm(a.x, imageW)
+        val y1 = norm(a.y, imageH)
         return when (a.type) {
             "tap" -> GameAction.Tap(x1, y1)
             "hold" -> GameAction.Hold(x1, y1)
-            "swipe" -> GameAction.Swipe(x1, y1, a.x2.coerceIn(0f, 1f), a.y2.coerceIn(0f, 1f))
+            "swipe" -> GameAction.Swipe(x1, y1, norm(a.x2, imageW), norm(a.y2, imageH))
             else -> null
         }
+    }
+
+    private fun describe(action: GameAction?): String = when (action) {
+        is GameAction.Tap -> "لمس روی (%.2f, %.2f)".format(action.x, action.y)
+        is GameAction.Hold -> "نگه‌داشتن روی (%.2f, %.2f)".format(action.x, action.y)
+        is GameAction.Swipe -> "کشیدن از (%.2f, %.2f) تا (%.2f, %.2f)".format(action.x1, action.y1, action.x2, action.y2)
+        else -> "بدون لمس (wait)"
     }
 
     /** A coarse brightness grid. Used to detect whether the screen has changed. */

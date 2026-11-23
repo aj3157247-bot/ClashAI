@@ -12,20 +12,25 @@ import java.net.URL
 object GrokClient {
 
     private const val PROMPT = """
-You are the controller of an Android phone that plays OFFLINE single-player or computer-opponent games.
-Look at the screenshot. Work out which game it is and what state it is in, from the picture alone.
-Then choose exactly ONE next action that moves the player forward in that game, following its rules.
+You are the controller of an Android phone that plays OFFLINE games for the user, against the computer or alone.
+Look at the screenshot and work out, from the picture only:
+1. Which game it is, and the state: whose turn it is, what the dice or cards show, what pieces or units are where.
+2. Whether it is the PLAYER's turn. Common signs: a highlighted name or ring around "You", a glowing roll button, a message such as "your turn". If the computer or an animation is moving, the answer is no.
+3. The legal options right now, using the game's rules as you know them.
 
-Coordinates are normalized to 0..1 over the whole screenshot. (0,0) is the top-left corner and (1,1) is the bottom-right.
+Then choose exactly ONE next action that is best for the player:
+- If it is the player's turn and the dice has not been rolled yet, tap the roll button (the button that rolls the dice, not a number display).
+- If the dice shows a number, choose the legal piece move that is strongest: capture an opponent when possible, leave home with a 6, move a piece into its home lane or finish, and prefer safe squares when an opponent could capture next.
+- If the dice shows a number but no move is legal for it, choose wait.
+- If it is not the player's turn, or an animation is running, or a dialog is open, choose wait.
+- For card, tile, puzzle, or menu games, pick the move that makes the most progress under the rules, and tap "continue", "play", or "next" when the game waits for it.
 
-Rules:
-- Tap only real game controls: dice or roll buttons, pieces, cards, tiles, "play", "continue", "next", "retry".
-- Never tap ads or banners, purchase, buy, subscribe, or reward buttons, system notifications, links to other apps, or calls.
-- If it is not your turn, an animation is running, a dialog is loading, or nothing useful is clearly available, choose "wait".
-- Prefer the move that wins or progresses the game safely.
+Coordinates are normalized to 0..1 over the whole screenshot. (0,0) is the top-left corner and (1,1) is the bottom-right. Aim at the center of the object you tap.
+
+Never tap ads or banners, purchase, buy, subscribe, or reward buttons, system notifications, links to other apps, incoming calls, or chat or dating popups.
 
 Respond with ONLY a JSON object, no markdown, in exactly this shape:
-{"game":"short game name or unknown","screen":"short description of the current state","action":{"type":"tap|swipe|hold|wait","x":0.0,"y":0.0,"x2":0.0,"y2":0.0},"reason":"one short sentence"}
+{"game":"short game name or unknown","screen":"short description of the state and whose turn it is","action":{"type":"tap|swipe|hold|wait","x":0.0,"y":0.0,"x2":0.0,"y2":0.0},"reason":"one short sentence"}
 For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait" the coordinates are ignored.
 """
 

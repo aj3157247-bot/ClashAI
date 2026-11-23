@@ -39,26 +39,32 @@ class AutoPlayAccessibilityService : AccessibilityService() {
             onResult(null)
             return
         }
-        takeScreenshot(
-            Display.DEFAULT_DISPLAY,
-            mainExecutor,
-            object : AccessibilityService.TakeScreenshotCallback {
-                override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
-                    val hardware = Bitmap.wrapHardwareBuffer(
-                        screenshot.hardwareBuffer,
-                        screenshot.colorSpace
-                    )
-                    val software = hardware?.copy(Bitmap.Config.ARGB_8888, false)
-                    hardware?.recycle()
-                    screenshot.hardwareBuffer.close()
-                    onResult(software)
-                }
+        try {
+            takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                        val hardware = Bitmap.wrapHardwareBuffer(
+                            screenshot.hardwareBuffer,
+                            screenshot.colorSpace
+                        )
+                        val software = hardware?.copy(Bitmap.Config.ARGB_8888, false)
+                        hardware?.recycle()
+                        screenshot.hardwareBuffer.close()
+                        onResult(software)
+                    }
 
-                override fun onFailure(errorCode: Int) {
-                    onResult(null)
+                    override fun onFailure(errorCode: Int) {
+                        AdviceLog.error("اسکرین‌شات ناموفق بود (کد $errorCode). canTakeScreenshot را بررسی کن.")
+                        onResult(null)
+                    }
                 }
-            }
-        )
+            )
+        } catch (e: Exception) {
+            AdviceLog.error("اسکرین‌شات اجرا نشد: ${e.message}")
+            onResult(null)
+        }
     }
 
     fun perform(action: GameAction) {

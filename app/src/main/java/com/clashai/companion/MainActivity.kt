@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.delay
@@ -23,6 +24,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AiSettings.init(this)
+        GameRegistry.register(GrokGameModule())
         GameRegistry.register(LudoModule())
         setContent {
             UniversalGameAI()
@@ -39,6 +42,10 @@ fun UniversalGameAI() {
     var accessibilityOn by remember { mutableStateOf(false) }
     var overlayOn by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var agentOn by remember { mutableStateOf(false) }
+    var adviceText by remember { mutableStateOf(AdviceLog.lastText) }
+    var keyText by remember { mutableStateOf(AiSettings.apiKey) }
+    var modelText by remember { mutableStateOf(AiSettings.model) }
+    var showKey by remember { mutableStateOf(false) }
 
     // Re-check the accessibility service every second, because the user enables it in another screen.
     LaunchedEffect(Unit) {
@@ -46,6 +53,7 @@ fun UniversalGameAI() {
             accessibilityOn = AutoPlayAccessibilityService.instance != null
             overlayOn = Settings.canDrawOverlays(context)
             agentOn = AgentLoop.isRunning()
+            adviceText = AdviceLog.lastText
             delay(1000)
         }
     }
@@ -131,9 +139,44 @@ fun UniversalGameAI() {
                 ) { Text("نمایش دکمه‌ی شناور") }
 
                 HorizontalDivider()
+                Text("هوش مصنوعی Grok (برای بازی‌های عمومی)", style = MaterialTheme.typography.titleMedium)
+                OutlinedTextField(
+                    value = keyText,
+                    onValueChange = { keyText = it },
+                    label = { Text("کلید API") },
+                    singleLine = true,
+                    visualTransformation = if (showKey) {
+                        androidx.compose.ui.text.input.VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedButton(
+                    onClick = { showKey = !showKey },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (showKey) "پنهان کردن کلید" else "نمایش کلید") }
+                OutlinedTextField(
+                    value = modelText,
+                    onValueChange = { modelText = it },
+                    label = { Text("نام مدل (باید با docs.x.ai یکی باشد)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = {
+                        AiSettings.apiKey = keyText
+                        AiSettings.model = modelText
+                        status = if (keyText.isBlank()) "کلید خالی است" else "تنظیمات Grok ذخیره شد"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("ذخیره‌ی تنظیمات Grok") }
+                Text("تصمیم هوش مصنوعی: $adviceText")
+
+                HorizontalDivider()
                 Text("وضعیت: $status")
                 Text("ربات: ${if (agentOn) "در حال اجرا" else "متوقف"}")
-                Text("ماژول‌های بازی: لودو (آفلاین، نسخه‌ی اولیه)")
+                Text("ماژول‌ها: Grok (عمومی) و لودو (اولیه)")
 
                 OutlinedButton(
                     onClick = {

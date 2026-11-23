@@ -3,6 +3,7 @@ package com.clashai.companion
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.graphics.ImageDecoder
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -13,12 +14,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import android.graphics.ImageDecoder
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,14 +31,21 @@ class MainActivity : ComponentActivity() {
 fun ClashAiApp() {
     val context = LocalContext.current
     var selectedUri by remember { mutableStateOf<Uri?>(null) }
-    var analysis by remember { mutableStateOf("برای شروع، تصویر صفحه نبرد را انتخاب کن.") }
+    var analysis by remember {
+        mutableStateOf("برای شروع، تصویر صفحه نبرد را انتخاب کن.")
+    }
+
     val picker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            context.contentResolver.takePersistableUriPermission(
-                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
+            try {
+                context.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: SecurityException) {
+                // Some document providers do not support persistable permissions.
+            }
             selectedUri = uri
             analysis = "تصویر دریافت شد. موتور تشخیص کارت‌ها و وضعیت میدان در مرحله بعدی به این بخش وصل می‌شود."
         }
@@ -47,9 +53,7 @@ fun ClashAiApp() {
 
     MaterialTheme {
         Scaffold(
-            topBar = {
-                TopAppBar(title = { Text("Clash AI Coach") })
-            }
+            topBar = { TopAppBar(title = { Text("Clash AI Coach") }) }
         ) { padding ->
             Column(
                 modifier = Modifier
@@ -66,7 +70,9 @@ fun ClashAiApp() {
                 Button(
                     onClick = { picker.launch(arrayOf("image/*")) },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("انتخاب تصویر از گالری") }
+                ) {
+                    Text("انتخاب تصویر از گالری")
+                }
 
                 selectedUri?.let { uri ->
                     val bitmap = remember(uri) {
@@ -81,7 +87,10 @@ fun ClashAiApp() {
                 }
 
                 ElevatedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         Text("وضعیت تحلیل", style = MaterialTheme.typography.titleMedium)
                         Text(analysis)
                     }

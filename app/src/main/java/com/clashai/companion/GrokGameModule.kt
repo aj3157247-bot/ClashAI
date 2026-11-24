@@ -61,7 +61,6 @@ class GrokGameModule : GameModule {
             val small = scaledCopy(frame)
             val sentW = small.width.toFloat()
             val sentH = small.height.toFloat()
-            val sentH = small.height.toFloat()
             val key = AiSettings.apiKey
             val model = AiSettings.model
             val endpoint = AiSettings.endpoint

@@ -23,12 +23,13 @@ class GrokGameModule : GameModule {
     private var pendingAction: GameAction? = null
 
     private var lastRequestAt = 0L
+    @Volatile private var waitStreak = 0
     @Volatile private var backoffUntil = 0L
     private var lastActionAt = 0L
     private var lastSignature: IntArray? = null
 
     override fun matches(packageName: String?, frame: Bitmap): Boolean =
-        AiSettings.apiKey.isNotBlank() && packageName != null
+        AiSettings.apiKey.isNotBlank()
 
     override fun decide(frame: Bitmap): GameAction {
         val now = System.currentTimeMillis()
@@ -60,6 +61,7 @@ class GrokGameModule : GameModule {
             val small = scaledCopy(frame)
             val sentW = small.width.toFloat()
             val sentH = small.height.toFloat()
+            val sentH = small.height.toFloat()
             val key = AiSettings.apiKey
             val model = AiSettings.model
             val endpoint = AiSettings.endpoint
@@ -67,10 +69,14 @@ class GrokGameModule : GameModule {
             AdviceLog.info("در حال ارسال تصویر بازی به هوش مصنوعی...")
             worker.execute {
                 try {
-                    val advice = GrokClient.askForAction(key, endpoint, model, small)
+                    val hint = if (waitStreak >= 2)
+                        "The screen has not changed for several checks. If a roll, pass, end-turn, or next button is visible anywhere on the screen, tap it now. Do not answer wait."
+                    else ""
+                    val advice = GrokClient.askForAction(key, endpoint, model, small, hint)
                     AdviceLog.update(advice)
                     val action = toAction(advice, sentW, sentH)
                     AdviceLog.info(AdviceLog.lastText + " | " + describe(action))
+                    waitStreak = if (action == null) waitStreak + 1 else 0
                     if (action != null) {
                         synchronized(this) { pendingAction = action }
                     }

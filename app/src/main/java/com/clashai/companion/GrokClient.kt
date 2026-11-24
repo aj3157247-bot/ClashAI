@@ -37,7 +37,7 @@ Respond with ONLY a JSON object, no markdown, in exactly this shape:
 For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait" the coordinates are ignored.
 """
 
-    fun askForAction(apiKey: String, endpoint: String, model: String, frame: Bitmap): Advice {
+    fun askForAction(apiKey: String, endpoint: String, model: String, frame: Bitmap, hint: String = ""): Advice {
         val jpeg = ByteArrayOutputStream().use { out ->
             frame.compress(Bitmap.CompressFormat.JPEG, 85, out)
             out.toByteArray()
@@ -49,7 +49,7 @@ For "tap" and "hold" use x and y only. For "swipe" also set x2 and y2. For "wait
             .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64"))
         val textPart = JSONObject()
             .put("type", "text")
-            .put("text", PROMPT)
+            .put("text", if (hint.isEmpty()) PROMPT else PROMPT + "\n\nIMPORTANT: " + hint)
 
         val message = JSONObject()
             .put("role", "user")

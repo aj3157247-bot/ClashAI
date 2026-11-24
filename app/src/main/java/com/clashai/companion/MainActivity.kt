@@ -27,8 +27,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AiSettings.init(this)
-        GameRegistry.register(GrokGameModule())
         GameRegistry.register(LudoModule())
+        GameRegistry.register(GrokGameModule())
         setContent {
             UniversalGameAI()
         }
@@ -210,7 +210,7 @@ fun UniversalGameAI() {
                 HorizontalDivider()
                 Text("وضعیت: $status")
                 Text("ربات: ${if (agentOn) "در حال اجرا" else "متوقف"}")
-                Text("ماژول‌ها: Grok (عمومی) و لودو (اولیه)")
+                Text("ماژول‌ها: لودو (محلی، بدون اینترنت) و Grok (بازی‌های دیگر)")
 
                 OutlinedButton(
                     onClick = {

@@ -47,14 +47,17 @@ object AgentLoop {
     private var capturing = false
 
     // Android allows only a few screenshots per second, so space them out.
-    private const val CAPTURE_GAP_MS = 1500L
+    private const val CAPTURE_GAP_MS = 700L
     private var lastCaptureAt = 0L
 
     private fun step() {
         val service = AutoPlayAccessibilityService.instance ?: return
         val pkg = service.currentPackage()
-        if (pkg == null || pkg == OWN_PACKAGE) {
+        // Some phones or games hide the package name (it can be null). Still try to act in that case.
+        // Only skip when this app itself is in front.
+        if (pkg == OWN_PACKAGE) {
             FrameBus.take()?.recycle()
+            AdviceLog.info("AI Player جلوی صفحه است. بازی را جلو بیاور.")
             return
         }
 

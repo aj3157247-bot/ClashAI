@@ -109,6 +109,17 @@ fun UniversalGameAI() {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("باز کردن تنظیمات دسترسی") }
+                OutlinedButton(
+                    onClick = {
+                        val details = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        context.startActivity(details)
+                        status = "در صفحه‌ی برنامه، از ⋮ گزینه‌ی «Allow restricted settings» را بزن"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("صفحه‌ی AI Player (برای مجاز کردن تنظیمات محدود)") }
 
                 Text("مرحله ۳: نمایش روی سایر برنامه‌ها — ${if (overlayOn) "مجاز" else "غیرمجاز"}")
                 Button(
@@ -124,6 +135,17 @@ fun UniversalGameAI() {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("اجازه‌ی نمایش روی برنامه‌ها") }
+                OutlinedButton(
+                    onClick = {
+                        val details = Intent(
+                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.parse("package:${context.packageName}")
+                        )
+                        context.startActivity(details)
+                        status = "در صفحه‌ی برنامه، «نمایش روی سایر برنامه‌ها» را روشن کن"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("صفحه‌ی AI Player (اگر در لیست نبود)") }
 
                 Text("مرحله ۴: دکمه‌ی شناور")
                 Button(
@@ -189,6 +211,41 @@ fun UniversalGameAI() {
                 Text("وضعیت: $status")
                 Text("ربات: ${if (agentOn) "در حال اجرا" else "متوقف"}")
                 Text("ماژول‌ها: Grok (عمومی) و لودو (اولیه)")
+
+                OutlinedButton(
+                    onClick = {
+                        val svc = AutoPlayAccessibilityService.instance
+                        if (svc == null) {
+                            status = "سرویس دسترسی فعال نیست"
+                            return@OutlinedButton
+                        }
+                        status = "۳ ثانیه بعد به بازی برو؛ یک لمس وسط صفحه زده می‌شود"
+                        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                            svc.perform(GameAction.Tap(0.5f, 0.5f))
+                        }, 3000L)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("تست لمس (وسط صفحه)") }
+
+                OutlinedButton(
+                    onClick = {
+                        val svc = AutoPlayAccessibilityService.instance
+                        if (svc == null) {
+                            status = "سرویس دسترسی فعال نیست"
+                            return@OutlinedButton
+                        }
+                        status = "در حال گرفتن اسکرین‌شات..."
+                        svc.captureFrame { bmp ->
+                            status = if (bmp == null) {
+                                "اسکرین‌شات نشد؛ متن خطا را در بخش تصمیم هوش مصنوعی ببین"
+                            } else {
+                                "اسکرین‌شات گرفته شد: ${bmp.width} x ${bmp.height}"
+                            }
+                            bmp?.recycle()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("تست اسکرین‌شات") }
 
                 OutlinedButton(
                     onClick = {

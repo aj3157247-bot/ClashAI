@@ -23,8 +23,9 @@ object AgentLoop {
             if (!running) return
             try {
                 step()
-            } catch (e: Exception) {
-                // Keep the loop alive if a single frame fails.
+            } catch (e: Throwable) {
+                // Keep the loop alive if a single frame fails, and show why.
+                AdviceLog.error("خطای حلقه: " + e.javaClass.simpleName + ": " + (e.message ?: ""))
             }
             handler.postDelayed(this, TICK_MS)
         }
@@ -51,7 +52,11 @@ object AgentLoop {
     private var lastCaptureAt = 0L
 
     private fun step() {
-        val service = AutoPlayAccessibilityService.instance ?: return
+        val service = AutoPlayAccessibilityService.instance
+        if (service == null) {
+            AdviceLog.info("سرویس دسترسی متصل نیست؛ در تنظیمات دسترسی آن را خاموش و دوباره روشن کن")
+            return
+        }
         val pkg = service.currentPackage()
         // Some phones or games hide the package name (it can be null). Still try to act in that case.
         // Only skip when this app itself is in front.
@@ -74,7 +79,16 @@ object AgentLoop {
 
         val frame = FrameBus.take() ?: return
         try {
-            val module = GameRegistry.find(pkg, frame) ?: return
+            val module = GameRegistry.find(pkg, frame)
+            if (module == null) {
+                AdviceLog.info(
+                    if (AiSettings.mode == AiSettings.MODE_ONLINE)
+                        "بازی شناخته نشد یا کلید API خالی است"
+                    else
+                        "حالت آفلاین: فقط لودو پشتیبانی می‌شود. برای بازی‌های دیگر «آنلاین» را انتخاب کن"
+                )
+                return
+            }
             val action = module.decide(frame)
             service.perform(action)
         } finally {

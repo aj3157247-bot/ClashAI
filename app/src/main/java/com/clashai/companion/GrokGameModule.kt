@@ -29,7 +29,7 @@ class GrokGameModule : GameModule {
     private var lastSignature: IntArray? = null
 
     override fun matches(packageName: String?, frame: Bitmap): Boolean =
-        AiSettings.apiKey.isNotBlank()
+        AiSettings.mode == AiSettings.MODE_ONLINE && AiSettings.apiKey.isNotBlank()
 
     override fun decide(frame: Bitmap): GameAction {
         val now = System.currentTimeMillis()

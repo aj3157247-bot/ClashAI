@@ -27,8 +27,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AiSettings.init(this)
-        GameRegistry.register(LudoModule())
-        GameRegistry.register(GrokGameModule())
         setContent {
             UniversalGameAI()
         }
@@ -49,6 +47,8 @@ fun UniversalGameAI() {
     var modelText by remember { mutableStateOf(AiSettings.model) }
     var endpointText by remember { mutableStateOf(AiSettings.endpoint) }
     var showKey by remember { mutableStateOf(false) }
+    var modeText by remember { mutableStateOf(AiSettings.mode) }
+    var crashText by remember { mutableStateOf(CrashLog.last(context)) }
 
     // Re-check the accessibility service every second, because the user enables it in another screen.
     LaunchedEffect(Unit) {
@@ -57,6 +57,7 @@ fun UniversalGameAI() {
             overlayOn = Settings.canDrawOverlays(context)
             agentOn = AgentLoop.isRunning()
             adviceText = AdviceLog.lastText
+            crashText = CrashLog.last(context)
             delay(1000)
         }
     }
@@ -93,7 +94,7 @@ fun UniversalGameAI() {
                 Text("بازیکن هوشمند برای بازی‌های آفلاین خودت")
                 HorizontalDivider()
 
-                Text("مرحله ۱: کپچر صفحه — ${if (captureOn) "فعال" else "غیرفعال"}")
+                Text("مرحله ۱ (اختیاری، دیگر لازم نیست): کپچر صفحه — ${if (captureOn) "فعال" else "غیرفعال"}")
                 Button(
                     onClick = {
                         val mpm = context.getSystemService(MediaProjectionManager::class.java)
@@ -102,7 +103,7 @@ fun UniversalGameAI() {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("اجازه‌ی کپچر صفحه") }
 
-                Text("مرحله ۲: سرویس دسترسی (برای لمس) — ${if (accessibilityOn) "فعال" else "غیرفعال"}")
+                Text("مرحله ۲: سرویس دسترسی (برای لمس) — ${if (accessibilityOn) "متصل" else "قطع؛ در تنظیمات خاموش و روشن کن"}")
                 Button(
                     onClick = {
                         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -152,8 +153,6 @@ fun UniversalGameAI() {
                     onClick = {
                         if (!accessibilityOn) {
                             status = "ابتدا سرویس دسترسی را فعال کن"
-                        } else if (!captureOn) {
-                            status = "ابتدا کپچر صفحه را فعال کن"
                         } else if (!overlayOn) {
                             status = "ابتدا اجازه‌ی نمایش روی برنامه‌ها را بده"
                         } else {
@@ -165,7 +164,32 @@ fun UniversalGameAI() {
                 ) { Text("نمایش دکمه‌ی شناور") }
 
                 HorizontalDivider()
-                Text("هوش مصنوعی (برای بازی‌های عمومی)", style = MaterialTheme.typography.titleMedium)
+                Text("حالت بازی", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "فعلی: " + if (modeText == AiSettings.MODE_ONLINE)
+                        "آنلاین (هوش مصنوعی ابری، برای بازی‌های سخت‌تر)"
+                    else
+                        "آفلاین (ربات محلی، بدون اینترنت)"
+                )
+                Button(
+                    onClick = {
+                        AiSettings.mode = AiSettings.MODE_OFFLINE
+                        modeText = AiSettings.MODE_OFFLINE
+                        status = "حالت آفلاین: ربات محلی (لودو)"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("آفلاین: ربات محلی (لودو و بازی‌های تخته‌ای)") }
+                OutlinedButton(
+                    onClick = {
+                        AiSettings.mode = AiSettings.MODE_ONLINE
+                        modeText = AiSettings.MODE_ONLINE
+                        status = if (AiSettings.apiKey.isBlank()) "حالت آنلاین: ابتدا کلید API را ذخیره کن" else "حالت آنلاین: هوش مصنوعی ابری"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("آنلاین: هوش مصنوعی ابری (بازی‌های سخت‌تر)") }
+
+                HorizontalDivider()
+                Text("هوش مصنوعی ابری (برای بازی‌های دیگر)", style = MaterialTheme.typography.titleMedium)
                 OutlinedTextField(
                     value = keyText,
                     onValueChange = { keyText = it },
@@ -210,7 +234,7 @@ fun UniversalGameAI() {
                 HorizontalDivider()
                 Text("وضعیت: $status")
                 Text("ربات: ${if (agentOn) "در حال اجرا" else "متوقف"}")
-                Text("ماژول‌ها: لودو (محلی، بدون اینترنت) و Grok (بازی‌های دیگر)")
+                Text("ماژول‌ها: لودو (محلی) همیشه؛ هوش مصنوعی ابری فقط در حالت آنلاین")
 
                 OutlinedButton(
                     onClick = {
@@ -246,6 +270,17 @@ fun UniversalGameAI() {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("تست اسکرین‌شات") }
+
+                HorizontalDivider()
+                Text("آخرین خطای برنامه (اگر برنامه خودش بسته شد، این متن را بفرست):")
+                Text(if (crashText.isBlank()) "هیچ خطایی ثبت نشده" else crashText)
+                OutlinedButton(
+                    onClick = {
+                        CrashLog.clear(context)
+                        crashText = ""
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("پاک کردن خطا") }
 
                 OutlinedButton(
                     onClick = {

@@ -13,6 +13,10 @@ object AiSettings {
     private const val KEY_API = "grok_api_key"
     private const val KEY_MODEL = "grok_model"
     private const val KEY_ENDPOINT = "api_endpoint"
+    private const val KEY_MODE = "mode"
+
+    const val MODE_OFFLINE = "offline"   // local bots only, no internet
+    const val MODE_ONLINE = "online"     // cloud AI for other games
 
     // Groq is OpenAI-compatible. Use https://api.x.ai/v1/chat/completions for xAI keys.
     const val DEFAULT_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
@@ -31,6 +35,12 @@ object AiSettings {
         get() = prefs?.getString(KEY_API, "") ?: ""
         set(value) {
             prefs?.edit()?.putString(KEY_API, value.trim())?.apply()
+        }
+
+    var mode: String
+        get() = prefs?.getString(KEY_MODE, MODE_OFFLINE) ?: MODE_OFFLINE
+        set(value) {
+            prefs?.edit()?.putString(KEY_MODE, value)?.apply()
         }
 
     var endpoint: String

@@ -82,10 +82,10 @@ object AgentLoop {
             val module = GameRegistry.find(pkg, frame)
             if (module == null) {
                 AdviceLog.info(
-                    if (AiSettings.mode == AiSettings.MODE_ONLINE)
-                        "بازی شناخته نشد یا کلید API خالی است"
+                    if (AiSettings.cloudAllowed())
+                        "کلید API خالی است؛ آن را در تنظیمات ذخیره کن"
                     else
-                        "حالت آفلاین: فقط لودو پشتیبانی می‌شود. برای بازی‌های دیگر «آنلاین» را انتخاب کن"
+                        "حالت آفلاین: فقط لودو پشتیبانی می‌شود. برای بازی‌های دیگر «آنلاین» یا «هوشمند» را انتخاب کن"
                 )
                 return
             }

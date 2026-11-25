@@ -5,10 +5,16 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 
 /**
- * General module for any game. It sends the screen to Grok, gets one action,
- * and performs it. It is used when no game-specific module matches.
+ * General module for any game, powered by a cloud vision model.
  *
- * Requests are rate limited: one request at a time, and only when the screen has changed.
+ * What makes it stronger than a plain "screenshot in, tap out" loop:
+ *  - it recognizes the game (package name first, then the model's own answer) and then sends a
+ *    focused rules and strategy pack for that game;
+ *  - it draws a labeled coordinate grid on the screenshot so touches land precisely;
+ *  - it remembers its last actions and whether each one changed the screen, so it does not loop
+ *    on a tap that did nothing;
+ *  - it can send a short sequence (for example piece, then destination) in one request;
+ *  - it waits for animations to settle, backs off on rate limits and retries server errors.
  */
 class GrokGameModule : GameModule {
 
@@ -16,104 +22,182 @@ class GrokGameModule : GameModule {
 
     private val worker = Executors.newSingleThreadExecutor()
 
-    @Volatile
-    private var pending = false
+    @Volatile private var pending = false
 
     // Guarded by `this`.
-    private var pendingAction: GameAction? = null
+    private val queue = ArrayDeque<GameAction>()
+    private val history = ArrayList<String>()
 
-    private var lastRequestAt = 0L
+    @Volatile private var gameId: String? = null
+    @Volatile private var lockedByPackage = false
+    @Volatile private var currentPackage: String? = null
     @Volatile private var waitStreak = 0
     @Volatile private var backoffUntil = 0L
+
+    private var lastRequestAt = 0L
     private var lastActionAt = 0L
     private var lastSignature: IntArray? = null
 
-    override fun matches(packageName: String?, frame: Bitmap): Boolean =
-        AiSettings.mode == AiSettings.MODE_ONLINE && AiSettings.apiKey.isNotBlank()
+    // Signature of the screen that the last action was based on, and whether we still have to judge its effect.
+    @Volatile private var actionSignature: IntArray? = null
+    @Volatile private var awaitingEffect = false
+
+    override fun matches(packageName: String?, frame: Bitmap): Boolean {
+        if (!AiSettings.cloudAllowed() || AiSettings.apiKey.isBlank()) return false
+        if (packageName != currentPackage) resetFor(packageName)
+        return true
+    }
+
+    private fun resetFor(packageName: String?) {
+        currentPackage = packageName
+        synchronized(this) {
+            queue.clear()
+            history.clear()
+        }
+        val pack = GameKnowledge.identify(packageName)
+        gameId = pack?.id
+        lockedByPackage = pack != null
+        waitStreak = 0
+        lastSignature = null
+        actionSignature = null
+        awaitingEffect = false
+    }
 
     override fun decide(frame: Bitmap): GameAction {
         val now = System.currentTimeMillis()
-        if (now - lastActionAt < ACTION_GAP_MS) return GameAction.Wait
         if (now < backoffUntil) return GameAction.Wait
 
+        // 1) Play queued touches first, spaced out so the game can react between them.
         synchronized(this) {
-            val ready = pendingAction
-            if (ready != null) {
-                pendingAction = null
+            if (queue.isNotEmpty()) {
+                if (now - lastActionAt < ACTION_GAP_MS) return GameAction.Wait
                 lastActionAt = now
-                return ready
+                return queue.removeFirst()
             }
         }
+
+        // 2) Ask the AI again only when it makes sense.
+        if (pending) return GameAction.Wait
+        if (now - lastActionAt < SETTLE_MS) return GameAction.Wait
+        if (now - lastRequestAt < AiSettings.requestGapMs) return GameAction.Wait
 
         val sig = signature(frame)
         val previous = lastSignature
         val changed = previous == null || diff(previous, sig) > CHANGE_THRESHOLD
-
-        // Ask again when the screen changed, or after a quiet period. The quiet period stops the bot
-        // from freezing when a tap did nothing and the screen stayed the same.
         val heartbeat = now - lastRequestAt > HEARTBEAT_MS
-        if (!pending && (changed || heartbeat) && now - lastRequestAt > REQUEST_GAP_MS) {
-            lastRequestAt = now
-            lastSignature = sig
-            pending = true
+        if (!changed && !heartbeat && !awaitingEffect) return GameAction.Wait
 
-            // The frame is recycled by AgentLoop after this call, so send a copy.
-            val small = scaledCopy(frame)
-            val sentW = small.width.toFloat()
-            val sentH = small.height.toFloat()
-            val key = AiSettings.apiKey
-            val model = AiSettings.model
-            val endpoint = AiSettings.endpoint
-
-            AdviceLog.info("در حال ارسال تصویر بازی به هوش مصنوعی...")
-            worker.execute {
-                try {
-                    val hint = if (waitStreak >= 2)
-                        "The screen has not changed for several checks. If a roll, pass, end-turn, or next button is visible anywhere on the screen, tap it now. Do not answer wait."
-                    else ""
-                    val advice = GrokClient.askForAction(key, endpoint, model, small, hint)
-                    AdviceLog.update(advice)
-                    val action = toAction(advice, sentW, sentH)
-                    AdviceLog.info(AdviceLog.lastText + " | " + describe(action))
-                    waitStreak = if (action == null) waitStreak + 1 else 0
-                    if (action != null) {
-                        synchronized(this) { pendingAction = action }
-                    }
-                } catch (e: RateLimitException) {
-                    backoffUntil = System.currentTimeMillis() + e.retryAfterSeconds * 1000L
-                    AdviceLog.error("سقف سرعت Groq پر شد؛ ${e.retryAfterSeconds} ثانیه صبر می‌کند")
-                } catch (e: Exception) {
-                    AdviceLog.error(e.message ?: "خطای نامشخص")
-                } finally {
-                    small.recycle()
-                    pending = false
+        // Judge the effect of the last action.
+        if (awaitingEffect) {
+            val base = actionSignature
+            val effect = base != null && diff(base, sig) > EFFECT_THRESHOLD
+            synchronized(this) {
+                if (history.isNotEmpty()) {
+                    val last = history.size - 1
+                    history[last] = history[last] + if (effect) " -> the screen changed" else " -> NO visible change"
                 }
+            }
+            awaitingEffect = false
+        }
+
+        lastRequestAt = now
+        lastSignature = sig
+        pending = true
+
+        val grid = AiSettings.gridOverlay
+        val ctxHistory = synchronized(this) { history.toList() }
+        val hint = if (waitStreak >= 2)
+            "The last answers were wait. If a roll, play, pass, end-turn, continue or next button is visible and it is the player's turn, tap it now. Do not answer wait."
+        else ""
+        val ctx = AgentContext(gameId, ctxHistory, hint, grid)
+
+        // The frame is recycled by AgentLoop after this call, so render a copy for the worker.
+        val image = GridOverlay.render(frame, 1080, grid)
+        val sentW = image.width.toFloat()
+        val sentH = image.height.toFloat()
+        val key = AiSettings.apiKey
+        val model = AiSettings.model
+        val endpoint = AiSettings.endpoint
+
+        AdviceLog.info("در حال ارسال تصویر بازی به هوش مصنوعی...")
+        worker.execute {
+            try {
+                val advice = GrokClient.askForAction(key, endpoint, model, image, ctx)
+                AdviceLog.update(advice)
+                learnGame(advice)
+
+                var actions: List<GameAction> =
+                    advice.steps.mapNotNull { toAction(it, sentW, sentH) }
+                if (!advice.myTurn) actions = emptyList()
+
+                waitStreak = if (actions.isEmpty()) waitStreak + 1 else 0
+                AdviceLog.info(
+                    AdviceLog.lastText + " | " +
+                        (if (actions.isEmpty()) "بدون لمس (wait)" else actions.joinToString(" ، ") { describe(it) })
+                )
+
+                synchronized(this) {
+                    val entry = if (actions.isEmpty()) "wait: " + advice.reason
+                    else actions.joinToString(" then ") { describeEn(it) } + ": " + advice.reason
+                    val lastIsWait = history.isNotEmpty() && history[history.size - 1].startsWith("wait")
+                    if (actions.isNotEmpty() || !lastIsWait) history.add(entry.take(160))
+                    while (history.size > HISTORY_MAX) history.removeAt(0)
+                    queue.clear()
+                    queue.addAll(actions)
+                }
+                if (actions.isNotEmpty()) {
+                    actionSignature = sig
+                    awaitingEffect = true
+                }
+            } catch (e: RateLimitException) {
+                backoffUntil = System.currentTimeMillis() + e.retryAfterSeconds * 1000L
+                AdviceLog.error("سقف سرعت API پر شد؛ ${e.retryAfterSeconds} ثانیه صبر می‌کند")
+            } catch (e: Exception) {
+                backoffUntil = System.currentTimeMillis() + 3000L
+                AdviceLog.error(e.message ?: "خطای نامشخص")
+            } finally {
+                image.recycle()
+                pending = false
             }
         }
         return GameAction.Wait
     }
 
+    /** Remembers the game the model reported, unless the package name already told us. */
+    private fun learnGame(advice: Advice) {
+        if (lockedByPackage) return
+        val found = GameKnowledge.identify(advice.gameId) ?: GameKnowledge.identify(advice.game)
+        if (found != null) gameId = found.id
+    }
+
     /**
-     * Converts the model's answer into a tap. The model is told to use 0..1, but sometimes it
-     * answers in pixels of the image it saw. Values above 1 are treated as pixels and divided by the image size.
+     * Converts the model's answer into a touch. The model is told to use 0..1, but sometimes it
+     * answers in pixels of the image it saw. Values above 1 are treated as pixels.
      */
-    private fun toAction(a: Advice, imageW: Float, imageH: Float): GameAction? {
+    private fun toAction(s: Step, imageW: Float, imageH: Float): GameAction? {
         fun norm(v: Float, size: Float): Float = (if (v > 1f) v / size else v).coerceIn(0f, 1f)
-        val x1 = norm(a.x, imageW)
-        val y1 = norm(a.y, imageH)
-        return when (a.type) {
+        val x1 = norm(s.x, imageW)
+        val y1 = norm(s.y, imageH)
+        return when (s.type) {
             "tap" -> GameAction.Tap(x1, y1)
             "hold" -> GameAction.Hold(x1, y1)
-            "swipe" -> GameAction.Swipe(x1, y1, norm(a.x2, imageW), norm(a.y2, imageH))
+            "swipe" -> GameAction.Swipe(x1, y1, norm(s.x2, imageW), norm(s.y2, imageH))
             else -> null
         }
     }
 
-    private fun describe(action: GameAction?): String = when (action) {
-        is GameAction.Tap -> "لمس روی (%.2f, %.2f)".format(action.x, action.y)
-        is GameAction.Hold -> "نگه‌داشتن روی (%.2f, %.2f)".format(action.x, action.y)
-        is GameAction.Swipe -> "کشیدن از (%.2f, %.2f) تا (%.2f, %.2f)".format(action.x1, action.y1, action.x2, action.y2)
-        else -> "بدون لمس (wait)"
+    private fun describe(action: GameAction): String = when (action) {
+        is GameAction.Tap -> "لمس (%.2f, %.2f)".format(action.x, action.y)
+        is GameAction.Hold -> "نگه‌داشتن (%.2f, %.2f)".format(action.x, action.y)
+        is GameAction.Swipe -> "کشیدن (%.2f, %.2f) به (%.2f, %.2f)".format(action.x1, action.y1, action.x2, action.y2)
+        else -> "wait"
+    }
+
+    private fun describeEn(action: GameAction): String = when (action) {
+        is GameAction.Tap -> "tap(%.2f,%.2f)".format(action.x, action.y)
+        is GameAction.Hold -> "hold(%.2f,%.2f)".format(action.x, action.y)
+        is GameAction.Swipe -> "swipe(%.2f,%.2f->%.2f,%.2f)".format(action.x1, action.y1, action.x2, action.y2)
+        else -> "wait"
     }
 
     /** A coarse brightness grid. Used to detect whether the screen has changed. */
@@ -136,19 +220,13 @@ class GrokGameModule : GameModule {
         return sum / (a.size * 3)
     }
 
-    private fun scaledCopy(frame: Bitmap): Bitmap {
-        val w = 1080
-        val h = (frame.height.toFloat() * w / frame.width).toInt().coerceAtLeast(1)
-        val scaled = Bitmap.createScaledBitmap(frame, w, h, true)
-        // createScaledBitmap may return the same object. Make a real copy in that case.
-        return if (scaled === frame) frame.copy(Bitmap.Config.ARGB_8888, false) else scaled
-    }
-
     companion object {
-        private const val ACTION_GAP_MS = 1200L
-        private const val REQUEST_GAP_MS = 12000L
-        private const val HEARTBEAT_MS = 25000L
+        private const val ACTION_GAP_MS = 900L
+        private const val SETTLE_MS = 1500L
+        private const val HEARTBEAT_MS = 12000L
         private const val CHANGE_THRESHOLD = 6
+        private const val EFFECT_THRESHOLD = 3
+        private const val HISTORY_MAX = 6
         private const val GRID = 16
     }
 }

@@ -231,37 +231,93 @@ class LudoModule : GameModule {
         return -2
     }
 
+    /**
+     * Danger-aware move choice.
+     *
+     * The computer's pieces walk the same ring rotated by 180 degrees, so every green piece can be
+     * placed on the blue path by rotating its cell. From that we know which dice values would let
+     * a green piece land on any cell next turn (a bit mask per cell). Each legal move is then scored
+     * by what it gains (capture, finish, lane, safe star, leaving home) and what it risks
+     * (landing in front of a green piece, or leaving a piece that is already threatened).
+     */
     private fun chooseMove(blue: List<Piece>, green: List<Piece>, dice: Int): Move? {
-        val greenCells = HashSet<Int>()
+        val reach = HashMap<Int, Int>()          // cell key -> bit mask of dice values that hit it
+        val greenProgress = HashMap<Int, Int>()  // cell key -> green path index (how far it has walked)
+        val greenOnBlue = ArrayList<Int>()       // blue-path indexes that hold a green piece
+
         for (g in green) {
             val c = cellOf(g)
-            val inGreenHome = c.first >= 9 && c.second <= 5
-            if (!inGreenHome) greenCells.add(c.first * 100 + c.second)
+            if (c.first >= 9 && c.second <= 5) continue          // still in the green home box
+            val rc0 = 14 - c.first
+            val rc1 = 14 - c.second
+            var gi = -2
+            for (t in 0..50) {
+                if (BLUE_PATH[t][0] == rc0 && BLUE_PATH[t][1] == rc1) { gi = t; break }
+            }
+            if (gi < 0) continue                                   // on its own lane, cannot be hit
+            greenProgress[c.first * 100 + c.second] = gi
+            for (t in 0..50) {
+                if (BLUE_PATH[t][0] == c.first && BLUE_PATH[t][1] == c.second) { greenOnBlue.add(t); break }
+            }
+            for (d in 1..6) {
+                val t = gi + d
+                if (t > 50) break
+                val cell = BLUE_PATH[t]
+                val rk = (14 - cell[0]) * 100 + (14 - cell[1])
+                reach[rk] = (reach[rk] ?: 0) or (1 shl d)
+            }
         }
 
+        fun danger(key: Int): Double = Integer.bitCount(reach[key] ?: 0) / 6.0
+
+        var onBoard = 0
+        for (b in blue) { if (pathIndex(b) >= 0) onBoard++ }
+
         var best: Move? = null
-        var bestScore = -1.0
+        var bestScore = -1.0e9
         for (b in blue) {
             val i = pathIndex(b)
             if (i == -2) continue
             val j: Int
-            var score: Double
             if (i == -1) {
                 if (dice != 6) continue
                 j = 0
-                score = 60.0
             } else {
                 j = i + dice
                 if (j > FINISH_INDEX) continue
-                score = i * 0.1
             }
             val cell = BLUE_PATH[j]
             val key = cell[0] * 100 + cell[1]
-            val isSafe = SAFE.contains(key)
-            if (greenCells.contains(key) && !isSafe) score += 100.0
+            val safe = SAFE.contains(key)
+            val onTrack = j <= 50
+            val stake = 10.0 + (if (onTrack) j else 50).toDouble()
+            var score = 0.0
+
+            if (i == -1) score += if (onBoard == 0) 70.0 else 55.0
+
+            val victim = greenProgress[key]
+            if (victim != null && !safe && onTrack) score += 100.0 + victim * 1.5
+
             if (j == FINISH_INDEX) score += 90.0
-            if (isSafe) score += 25.0
-            if (i in 0..50 && j >= 51) score += 20.0
+            else if (j >= 51 && i in 0..50) score += 35.0
+
+            if (safe && onTrack && victim == null) score += 18.0
+            if (onTrack && !safe) score -= danger(key) * stake * 1.6
+
+            if (i in 0..50) {
+                val curCell = BLUE_PATH[i]
+                val curKey = curCell[0] * 100 + curCell[1]
+                if (!SAFE.contains(curKey)) score += danger(curKey) * (10.0 + i) * 1.4
+            }
+
+            if (onTrack) {
+                for (t in greenOnBlue) {
+                    if (t > j && t - j <= 6) { score += 4.0; break }
+                }
+            }
+
+            score += dice * 0.4 + (if (i >= 0) i * 0.03 else 0.0)
+
             if (score > bestScore) {
                 bestScore = score
                 best = Move(i, b.x, b.y - TAP_LIFT)

@@ -15,9 +15,15 @@ object AiSettings {
     private const val KEY_ENDPOINT = "api_endpoint"
     private const val KEY_MODE = "mode"
     private const val KEY_TOUCHES = "show_touches"
+    private const val KEY_GRID = "grid_overlay"
+    private const val KEY_GAP = "request_gap_ms"
 
     const val MODE_OFFLINE = "offline"   // local bots only, no internet
     const val MODE_ONLINE = "online"     // cloud AI for other games
+    const val MODE_AUTO = "auto"         // local bots first (fast, free), cloud AI for everything else
+
+    /** True when the cloud AI may be used at all. */
+    fun cloudAllowed(): Boolean = mode == MODE_ONLINE || mode == MODE_AUTO
 
     // Groq is OpenAI-compatible. Use https://api.x.ai/v1/chat/completions for xAI keys.
     const val DEFAULT_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
@@ -43,6 +49,20 @@ object AiSettings {
         get() = prefs?.getBoolean(KEY_TOUCHES, true) ?: true
         set(value) {
             prefs?.edit()?.putBoolean(KEY_TOUCHES, value)?.apply()
+        }
+
+    /** Draw a labeled coordinate grid on the screenshot sent to the AI. Improves touch accuracy. */
+    var gridOverlay: Boolean
+        get() = prefs?.getBoolean(KEY_GRID, true) ?: true
+        set(value) {
+            prefs?.edit()?.putBoolean(KEY_GRID, value)?.apply()
+        }
+
+    /** Minimum time between two cloud requests. Lower is faster but may hit the API rate limit. */
+    var requestGapMs: Long
+        get() = prefs?.getLong(KEY_GAP, 3000L) ?: 3000L
+        set(value) {
+            prefs?.edit()?.putLong(KEY_GAP, value.coerceIn(1000L, 30000L))?.apply()
         }
 
     var mode: String

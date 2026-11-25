@@ -49,6 +49,8 @@ fun UniversalGameAI() {
     var showKey by remember { mutableStateOf(false) }
     var modeText by remember { mutableStateOf(AiSettings.mode) }
     var touchesOn by remember { mutableStateOf(AiSettings.showTouches) }
+    var gridOn by remember { mutableStateOf(AiSettings.gridOverlay) }
+    var gapText by remember { mutableStateOf((AiSettings.requestGapMs / 1000L).toString()) }
     var crashText by remember { mutableStateOf(CrashLog.last(context)) }
 
     // Re-check the accessibility service every second, because the user enables it in another screen.
@@ -167,19 +169,28 @@ fun UniversalGameAI() {
                 HorizontalDivider()
                 Text("حالت بازی", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "فعلی: " + if (modeText == AiSettings.MODE_ONLINE)
-                        "آنلاین (هوش مصنوعی ابری، برای بازی‌های سخت‌تر)"
-                    else
-                        "آفلاین (ربات محلی، بدون اینترنت)"
+                    "فعلی: " + when (modeText) {
+                        AiSettings.MODE_ONLINE -> "آنلاین (هوش مصنوعی ابری برای همه‌ی بازی‌ها)"
+                        AiSettings.MODE_AUTO -> "هوشمند (ربات محلی اگر بازی را بشناسد، وگرنه هوش مصنوعی ابری)"
+                        else -> "آفلاین (ربات محلی، بدون اینترنت)"
+                    }
                 )
                 Button(
+                    onClick = {
+                        AiSettings.mode = AiSettings.MODE_AUTO
+                        modeText = AiSettings.MODE_AUTO
+                        status = if (AiSettings.apiKey.isBlank()) "حالت هوشمند: برای بازی‌های غیر لودو کلید API لازم است" else "حالت هوشمند فعال شد"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("هوشمند: محلی + ابری (پیشنهادی)") }
+                OutlinedButton(
                     onClick = {
                         AiSettings.mode = AiSettings.MODE_OFFLINE
                         modeText = AiSettings.MODE_OFFLINE
                         status = "حالت آفلاین: ربات محلی (لودو)"
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("آفلاین: ربات محلی (لودو و بازی‌های تخته‌ای)") }
+                ) { Text("آفلاین: ربات محلی (لودو)") }
                 OutlinedButton(
                     onClick = {
                         AiSettings.mode = AiSettings.MODE_ONLINE
@@ -187,7 +198,15 @@ fun UniversalGameAI() {
                         status = if (AiSettings.apiKey.isBlank()) "حالت آنلاین: ابتدا کلید API را ذخیره کن" else "حالت آنلاین: هوش مصنوعی ابری"
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("آنلاین: هوش مصنوعی ابری (بازی‌های سخت‌تر)") }
+                ) { Text("آنلاین: فقط هوش مصنوعی ابری") }
+
+                OutlinedButton(
+                    onClick = {
+                        AiSettings.gridOverlay = !AiSettings.gridOverlay
+                        gridOn = AiSettings.gridOverlay
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("شبکه‌ی مختصات روی تصویر (دقت لمس): " + if (gridOn) "روشن" else "خاموش") }
 
                 OutlinedButton(
                     onClick = {
@@ -229,8 +248,16 @@ fun UniversalGameAI() {
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                OutlinedTextField(
+                    value = gapText,
+                    onValueChange = { gapText = it.filter { ch -> ch.isDigit() }.take(2) },
+                    label = { Text("فاصله‌ی درخواست‌ها به ثانیه (کمتر = سریع‌تر، ولی احتمال محدودیت API)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
                 Button(
                     onClick = {
+                        AiSettings.requestGapMs = (gapText.toLongOrNull() ?: 3L) * 1000L
                         AiSettings.apiKey = keyText
                         AiSettings.model = modelText
                         AiSettings.endpoint = endpointText
@@ -243,7 +270,7 @@ fun UniversalGameAI() {
                 HorizontalDivider()
                 Text("وضعیت: $status")
                 Text("ربات: ${if (agentOn) "در حال اجرا" else "متوقف"}")
-                Text("ماژول‌ها: لودو (محلی) همیشه؛ هوش مصنوعی ابری فقط در حالت آنلاین")
+                Text("ماژول‌ها: لودو (محلی، خطرسنج) همیشه؛ هوش مصنوعی ابری در حالت آنلاین و هوشمند")
 
                 OutlinedButton(
                     onClick = {

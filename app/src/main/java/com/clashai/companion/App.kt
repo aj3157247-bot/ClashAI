@@ -12,6 +12,7 @@ class App : Application() {
         CrashLog.install(this)
         AiSettings.init(this)
         GameRegistry.register(LudoModule())
+        GameRegistry.register(ChessModule())
         GameRegistry.register(GrokGameModule())
     }
 }

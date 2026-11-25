@@ -109,12 +109,18 @@ class GrokGameModule : GameModule {
         val hint = if (waitStreak >= 2)
             "The last answers were wait. If a roll, play, pass, end-turn, continue or next button is visible and it is the player's turn, tap it now. Do not answer wait."
         else ""
-        val ctx = AgentContext(gameId, ctxHistory, hint, grid)
+        val board = findBoard(frame)
+        val boardNote = if (board == null) "" else
+            "A checkerboard was detected. The controller drew its cells in cyan, labeled A1 (top-left) to H8 (bottom-right): letter = column left to right, number = row top to bottom. " +
+                "Decide which cell to touch and aim at the exact center of that cell; the touch is snapped to the cell center automatically. "
+        val ctx = AgentContext(gameId, ctxHistory, boardNote + hint, grid)
 
         // The frame is recycled by AgentLoop after this call, so render a copy for the worker.
-        val image = GridOverlay.render(frame, 1080, grid)
+        val image = GridOverlay.render(frame, 1080, grid, board)
         val sentW = image.width.toFloat()
         val sentH = image.height.toFloat()
+        val frameW = frame.width.toFloat()
+        val frameH = frame.height.toFloat()
         val key = AiSettings.apiKey
         val model = AiSettings.model
         val endpoint = AiSettings.endpoint
@@ -127,7 +133,7 @@ class GrokGameModule : GameModule {
                 learnGame(advice)
 
                 var actions: List<GameAction> =
-                    advice.steps.mapNotNull { toAction(it, sentW, sentH) }
+                    advice.steps.mapNotNull { toAction(it, sentW, sentH, board, frameW, frameH) }
                 if (!advice.myTurn) actions = emptyList()
 
                 waitStreak = if (actions.isEmpty()) waitStreak + 1 else 0
@@ -174,15 +180,46 @@ class GrokGameModule : GameModule {
      * Converts the model's answer into a touch. The model is told to use 0..1, but sometimes it
      * answers in pixels of the image it saw. Values above 1 are treated as pixels.
      */
-    private fun toAction(s: Step, imageW: Float, imageH: Float): GameAction? {
+    private fun toAction(
+        s: Step, imageW: Float, imageH: Float,
+        board: BoardDetector.Geo?, frameW: Float, frameH: Float
+    ): GameAction? {
         fun norm(v: Float, size: Float): Float = (if (v > 1f) v / size else v).coerceIn(0f, 1f)
-        val x1 = norm(s.x, imageW)
-        val y1 = norm(s.y, imageH)
+
+        /** If the point is on a detected board, move it to the center of its cell. */
+        fun snap(nx: Float, ny: Float): FloatArray {
+            if (board == null) return floatArrayOf(nx, ny)
+            val px = nx * frameW
+            val py = ny * frameH
+            if (!board.contains(px, py)) return floatArrayOf(nx, ny)
+            val col = ((px - board.x0) / board.cell).toInt().coerceIn(0, 7)
+            val row = ((py - board.y0) / board.cell).toInt().coerceIn(0, 7)
+            return floatArrayOf(board.centerX(col) / frameW, board.centerY(row) / frameH)
+        }
+
+        val p1 = snap(norm(s.x, imageW), norm(s.y, imageH))
         return when (s.type) {
-            "tap" -> GameAction.Tap(x1, y1)
-            "hold" -> GameAction.Hold(x1, y1)
-            "swipe" -> GameAction.Swipe(x1, y1, norm(s.x2, imageW), norm(s.y2, imageH))
+            "tap" -> GameAction.Tap(p1[0], p1[1])
+            "hold" -> GameAction.Hold(p1[0], p1[1])
+            "swipe" -> {
+                val p2 = snap(norm(s.x2, imageW), norm(s.y2, imageH))
+                GameAction.Swipe(p1[0], p1[1], p2[0], p2[1])
+            }
             else -> null
+        }
+    }
+
+    /** Detects an 8 x 8 board (chess, checkers...) so the grid can be drawn and touches snapped. */
+    private fun findBoard(frame: Bitmap): BoardDetector.Geo? {
+        return try {
+            val w = frame.width
+            val h = frame.height
+            val px = IntArray(w * h)
+            frame.getPixels(px, 0, w, 0, 0, w, h)
+            val g = BoardDetector.detect(px, w, h)
+            if (g != null && BoardDetector.isCheckerboard(px, w, h, g)) g else null
+        } catch (e: Exception) {
+            null
         }
     }
 

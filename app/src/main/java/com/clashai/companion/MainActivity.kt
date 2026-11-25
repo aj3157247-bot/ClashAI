@@ -48,6 +48,7 @@ fun UniversalGameAI() {
     var endpointText by remember { mutableStateOf(AiSettings.endpoint) }
     var showKey by remember { mutableStateOf(false) }
     var modeText by remember { mutableStateOf(AiSettings.mode) }
+    var touchesOn by remember { mutableStateOf(AiSettings.showTouches) }
     var crashText by remember { mutableStateOf(CrashLog.last(context)) }
 
     // Re-check the accessibility service every second, because the user enables it in another screen.
@@ -187,6 +188,14 @@ fun UniversalGameAI() {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("آنلاین: هوش مصنوعی ابری (بازی‌های سخت‌تر)") }
+
+                OutlinedButton(
+                    onClick = {
+                        AiSettings.showTouches = !AiSettings.showTouches
+                        touchesOn = AiSettings.showTouches
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("نمایش جای لمس ربات روی صفحه: " + if (touchesOn) "روشن" else "خاموش") }
 
                 HorizontalDivider()
                 Text("هوش مصنوعی ابری (برای بازی‌های دیگر)", style = MaterialTheme.typography.titleMedium)

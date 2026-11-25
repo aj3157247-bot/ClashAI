@@ -14,6 +14,7 @@ object AiSettings {
     private const val KEY_MODEL = "grok_model"
     private const val KEY_ENDPOINT = "api_endpoint"
     private const val KEY_MODE = "mode"
+    private const val KEY_TOUCHES = "show_touches"
 
     const val MODE_OFFLINE = "offline"   // local bots only, no internet
     const val MODE_ONLINE = "online"     // cloud AI for other games
@@ -35,6 +36,13 @@ object AiSettings {
         get() = prefs?.getString(KEY_API, "") ?: ""
         set(value) {
             prefs?.edit()?.putString(KEY_API, value.trim())?.apply()
+        }
+
+    /** Show a pink marker where the bot touches the screen. */
+    var showTouches: Boolean
+        get() = prefs?.getBoolean(KEY_TOUCHES, true) ?: true
+        set(value) {
+            prefs?.edit()?.putBoolean(KEY_TOUCHES, value)?.apply()
         }
 
     var mode: String

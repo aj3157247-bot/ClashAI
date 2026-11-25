@@ -81,6 +81,7 @@ object AgentLoop {
         try {
             val module = GameRegistry.find(pkg, frame)
             if (module == null) {
+                DebugDump.save(frame, "no_module")
                 AdviceLog.info(
                     if (AiSettings.cloudAllowed())
                         "کلید API خالی است؛ آن را در تنظیمات ذخیره کن"

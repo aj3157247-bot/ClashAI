@@ -115,11 +115,13 @@ class LudoModule : GameModule {
             } else {
                 nextAt = now + 700L
             }
+            DebugDump.save(frame, "ludo_dice")
             AdviceLog.info("لودو: عدد تاس خوانده نشد")
             return GameAction.Wait
         }
 
         val pieces = detectPieces(img, geo)
+        if (pieces.blue.isEmpty()) DebugDump.save(frame, "ludo_nopieces")
         val move = chooseMove(geo, pieces.blue, pieces.others, dice)
 
         phase = Phase.ROLL
@@ -162,42 +164,97 @@ class LudoModule : GameModule {
         return if (bestS < 0) null else intArrayOf(bestS, bestE)
     }
 
+    /** Which home box color a pixel belongs to: 0 red, 1 green, 2 yellow, 3 blue frame, -1 none. */
+    private fun boxKind(p: Int): Int {
+        val r = (p shr 16) and 0xFF
+        val g = (p shr 8) and 0xFF
+        val b = p and 0xFF
+        return when {
+            r > 190 && g < 80 && b < 85 -> 0
+            g > 120 && r < 70 && b < 120 -> 1
+            r > 220 && g > 190 && b < 110 -> 2
+            r < 50 && g in 90..135 && b in 150..195 -> 3
+            else -> -1
+        }
+    }
+
     /**
-     * The dark blue home box (bottom-left) is a 6 x 6 cell square. Its left edge gives the board's
-     * left edge (the board is centered, so cell = (width - 2 * left) / 15), and its top/bottom give the
-     * board's vertical position.
+     * Bounding box [minX, minY, maxX, maxY] of the biggest connected area of each home color
+     * (index 0 red, 1 green, 2 yellow, 3 blue). Works on every second pixel to stay fast.
+     */
+    private fun homeBoxes(img: Img): Array<IntArray?> {
+        val step = 2
+        val gw = img.w / step
+        val gh = img.h / step
+        val kind = ByteArray(gw * gh)
+        for (y in 0 until gh) {
+            val base = y * step * img.w
+            for (x in 0 until gw) kind[y * gw + x] = boxKind(img.p[base + x * step]).toByte()
+        }
+        val seen = BooleanArray(gw * gh)
+        val stack = IntArray(gw * gh)
+        val bestCnt = IntArray(4)
+        val boxes = arrayOfNulls<IntArray>(4)
+        for (s in kind.indices) {
+            val k = kind[s].toInt()
+            if (k < 0 || seen[s]) continue
+            var sp = 0
+            stack[sp++] = s
+            seen[s] = true
+            var cnt = 0
+            var minX = gw
+            var maxX = -1
+            var minY = gh
+            var maxY = -1
+            while (sp > 0) {
+                val cur = stack[--sp]
+                val cx = cur % gw
+                val cy = cur / gw
+                cnt++
+                if (cx < minX) minX = cx
+                if (cx > maxX) maxX = cx
+                if (cy < minY) minY = cy
+                if (cy > maxY) maxY = cy
+                if (cx > 0) { val n = cur - 1; if (!seen[n] && kind[n].toInt() == k) { seen[n] = true; stack[sp++] = n } }
+                if (cx < gw - 1) { val n = cur + 1; if (!seen[n] && kind[n].toInt() == k) { seen[n] = true; stack[sp++] = n } }
+                if (cy > 0) { val n = cur - gw; if (!seen[n] && kind[n].toInt() == k) { seen[n] = true; stack[sp++] = n } }
+                if (cy < gh - 1) { val n = cur + gw; if (!seen[n] && kind[n].toInt() == k) { seen[n] = true; stack[sp++] = n } }
+            }
+            if (cnt > bestCnt[k]) {
+                bestCnt[k] = cnt
+                boxes[k] = intArrayOf(minX * step, minY * step, (maxX + 1) * step - 1, (maxY + 1) * step - 1)
+            }
+        }
+        return boxes
+    }
+
+    /**
+     * The board is a 15 x 15 grid with a red box top-left, green top-right, yellow bottom-right and blue
+     * bottom-left. The biggest area of each color gives the four outer edges of the board directly:
+     * left = red/blue left edge, right = green/yellow right edge, top = red/green top edge, bottom = blue/yellow
+     * bottom edge. The pins standing inside the boxes (they hold the same colors) do not matter any more.
+     *
+     * The old code measured only the blue frame and demanded that it is as wide as it is tall. A box with
+     * pins and a white inside is never like that, so in the 4-player layout the board was never found.
      */
     private fun findGeo(img: Img): Geo? {
         val s = img.w / 1080f
-        val xMax = img.w / 2
-        val yA = (img.h * 0.12f).toInt()
-        val yB = (img.h * 0.92f).toInt()
-        val rowCnt = IntArray(img.h)
-        for (y in yA until yB) {
-            var c = 0
-            val base = y * img.w
-            for (x in 0 until xMax) if (isFrameBlue(img.p[base + x])) c++
-            rowCnt[y] = c
-        }
-        val rows = longestRun(rowCnt, yA, yB, (100 * s).toInt(), (14 * s).toInt()) ?: return null
-        val boxH = rows[1] - rows[0] + 1
-        if (boxH < 300 * s || boxH > 460 * s) return null
-
-        val colCnt = IntArray(img.w)
-        for (y in rows[0]..rows[1]) {
-            val base = y * img.w
-            for (x in 0 until xMax) if (isFrameBlue(img.p[base + x])) colCnt[x]++
-        }
-        val cols = longestRun(colCnt, 0, xMax, (boxH * 0.25f).toInt(), 3) ?: return null
-        val boxW = cols[1] - cols[0] + 1
-        if (kotlin.math.abs(boxW - boxH) > 0.12f * boxH) return null
-
-        val x0 = cols[0].toFloat()
-        val cell = (img.w - 2f * x0) / 15f
-        if (cell < 30f * s || cell > 90f * s) return null
-        val y0 = ((rows[0] - 9f * cell) + (rows[1] + 1 - 15f * cell)) / 2f
-        if (y0 < 0f || y0 + 15f * cell > img.h) return null
-        return Geo(x0, y0, cell)
+        val b = homeBoxes(img)
+        val red = b[0] ?: return null
+        val green = b[1] ?: return null
+        val yellow = b[2] ?: return null
+        val blue = b[3] ?: return null
+        val x0 = min(red[0], blue[0]).toFloat()
+        val x1 = (max(green[2], yellow[2]) + 1).toFloat()
+        val yTop = min(red[1], green[1]).toFloat()
+        val yBot = (min(blue[3], yellow[3]) + 1).toFloat()
+        val cx = (x1 - x0) / 15f
+        val cy = (yBot - yTop) / 15f
+        if (cx < 30f * s || cx > 90f * s) return null
+        if (kotlin.math.abs(cx - cy) > 0.05f * cx) return null
+        val boxW = (red[2] - red[0] + 1).toFloat()
+        if (kotlin.math.abs(boxW - 6f * cx) > 1.2f * cx) return null
+        return Geo(x0, yTop, (cx + cy) / 2f)
     }
 
     private fun homesOk(img: Img, g: Geo): Boolean {
@@ -428,6 +485,42 @@ class LudoModule : GameModule {
             if (c.count < headMin || c.count > headMax) continue
             if (c.w > 36 * sc || c.h > 50 * sc || c.w < 12 * sc || c.h < 20 * sc) continue
             others[1]!!.add(Piece(c.cx.toFloat(), c.cy + y0 + 52f * sc))
+        }
+
+        // Second way to find pins: by the colored head. Works also for pins that stand without a ring under them
+        // (on the track). A piece is only added when no piece of that color is already known at that place.
+        val headKinds = BooleanArray(w * h)
+        val lists = arrayOf<MutableList<Piece>>(blue, others[1]!!, others[2]!!, others[3]!!)
+        for (k in 0..3) {
+            java.util.Arrays.fill(headKinds, false)
+            for (yy in 0 until h) {
+                val base = (y0 + yy) * w
+                for (x in 0 until w) {
+                    val p = img.p[base + x]
+                    val r = (p shr 16) and 0xFF
+                    val gg = (p shr 8) and 0xFF
+                    val b = p and 0xFF
+                    headKinds[yy * w + x] = when (k) {
+                        0 -> r < 90 && gg in 130..205 && b >= 215          // blue
+                        1 -> r > 180 && gg < 70 && b < 75                  // red
+                        2 -> r < 40 && gg in 90..150 && b < 100            // green
+                        else -> r > 215 && gg > 185 && b < 90              // yellow
+                    }
+                }
+            }
+            for (c in components(headKinds, headKinds, w, h)) {
+                if (c.count < (450f * sc * sc).toInt() || c.count > (1300f * sc * sc).toInt()) continue
+                if (c.w < 20 * sc || c.w > 42 * sc || c.h < 28 * sc || c.h > 44 * sc) continue
+                val tx = c.cx.toFloat()
+                val ty = c.cy + y0 + 52f * sc
+                var known = false
+                for (q in lists[k]) {
+                    val dx = q.x - tx
+                    val dy = q.y - ty
+                    if (dx * dx + dy * dy < (0.5f * g.cell) * (0.5f * g.cell)) { known = true; break }
+                }
+                if (!known) lists[k].add(Piece(tx, ty))
+            }
         }
         return Pieces(blue, others)
     }

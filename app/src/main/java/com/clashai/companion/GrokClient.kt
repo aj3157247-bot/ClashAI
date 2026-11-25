@@ -156,7 +156,7 @@ For tap and hold use x and y only. For swipe also set x2 and y2. For wait the co
         val body = JSONObject()
             .put("model", model)
             .put("temperature", 0.15)
-            .put("max_tokens", 700)
+            .put("max_tokens", 1400)
             .put("messages", JSONArray().put(message))
 
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {

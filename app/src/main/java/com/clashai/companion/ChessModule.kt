@@ -14,30 +14,43 @@ import kotlin.math.min
  * How it works (no internet):
  *  1. The board is found by its evenly spaced grid lines, so it does not matter where the app draws it.
  *  2. From the starting position it keeps its own copy of the game. Each frame it only reads which squares
- *     hold a bright piece, a dark piece or nothing, and finds the one legal move that explains the change.
+ *     hold a bright piece, a dark piece or nothing, and finds the legal move(s) that explain the change.
  *     That is how it follows the opponent's moves (including captures, castling, en passant).
  *  3. On its turn it searches with the built-in engine and taps the "from" square, then the "to" square,
  *     at the exact center of each square.
+ *
+ * Fixes in this version (found by running the detection on real screenshots of the game):
+ *  - Colored overlays (green hint dots, yellow last-move and green selection highlights) are ignored, so an
+ *    empty square with a hint dot is no longer seen as occupied. Before this, the tracker lost the game
+ *    as soon as a piece was selected.
+ *  - The tracker explains up to 3 plies at once (our move + the reply + one more), so it keeps up when the
+ *    opponent answers before the next screenshot. It also follows an Undo (goes back to an earlier position).
+ *  - It never throws the game away when it is confused; it keeps trying and only restarts on a fresh start position.
  */
 class ChessModule : GameModule {
 
     override val id: String = "chess_offline"
 
     private class Obs(val occ: BooleanArray, val feat: IntArray)   // indexed by screen row * 8 + col
+    private class Found(val pos: ChessPos, val plies: Int, val path: IntArray)
 
     private var geo: BoardDetector.Geo? = null
     private var lastDetectAt = 0L
 
     private var cachedFrame: Bitmap? = null
-    private var cachedObs: Obs? = null
+    private var cachedPx: IntArray? = null
+    private var cachedReady = false
     private var cachedW = 0
     private var cachedH = 0
+    private val obsCache = arrayOfNulls<Obs>(2)
 
     // Game tracking.
     private var pos: ChessPos? = null
+    private val history = ArrayList<ChessPos>()
     private var weWhite = true
     private var flipped = false
     private var threshold = 0
+    private var mode = 0          // 0 = ignore strongly colored overlay pixels, 1 = count every pixel
     private var mismatch = 0
 
     // Our pending touches and retry state.
@@ -46,42 +59,69 @@ class ChessModule : GameModule {
     private var lastPlanned = -1
     private var stuck = 0
 
+    // Search state for follow().
+    private var bestPos: ChessPos? = null
+    private var bestCost = 0
+    private val path = IntArray(MAX_PLIES)
+    private var bestPath = IntArray(0)
+
     override fun matches(packageName: String?, frame: Bitmap): Boolean {
-        val obs = analyse(frame) ?: return false
+        if (!prepare(frame)) return false
         if (pos != null) return true
-        return startCalibration(obs) != null
+        if (calibrate() != null) return true
+        // A board is visible but the game is not at its start. Offline mode explains it in decide();
+        // smart mode lets the cloud AI play instead.
+        return !AiSettings.cloudAllowed()
     }
 
     // ---------------------------------------------------------------- observation
 
-    private fun analyse(frame: Bitmap): Obs? {
-        if (cachedFrame === frame) return cachedObs
+    /** Loads the pixels of this frame and makes sure a board is known. Cached per frame. */
+    private fun prepare(frame: Bitmap): Boolean {
+        if (cachedFrame === frame) return cachedReady
         cachedFrame = frame
-        cachedObs = null
+        cachedReady = false
+        obsCache[0] = null
+        obsCache[1] = null
         val w = frame.width
         val h = frame.height
         cachedW = w
         cachedH = h
+        val px = IntArray(w * h)
+        frame.getPixels(px, 0, w, 0, 0, w, h)
+        cachedPx = px
 
         val now = System.currentTimeMillis()
         var g = geo
-        val px = IntArray(w * h)
-        frame.getPixels(px, 0, w, 0, 0, w, h)
-
         if (g != null && !BoardDetector.isCheckerboard(px, w, h, g)) {
             g = null
             geo = null
         }
         if (g == null) {
-            if (now - lastDetectAt < DETECT_GAP_MS) return null
+            if (now - lastDetectAt < DETECT_GAP_MS) return false
             lastDetectAt = now
-            val found = BoardDetector.detect(px, w, h) ?: return null
-            if (!BoardDetector.isCheckerboard(px, w, h, found)) return null
+            val found = BoardDetector.detect(px, w, h) ?: return false
+            if (!BoardDetector.isCheckerboard(px, w, h, found)) return false
             geo = found
-            g = found
         }
+        cachedReady = true
+        return true
+    }
 
-        val board = g ?: return null
+    private fun obsFor(m: Int): Obs {
+        val c = obsCache[m]
+        if (c != null) return c
+        val o = observe(cachedPx!!, cachedW, cachedH, geo!!, if (m == 0) SAT_LIMIT else 256)
+        obsCache[m] = o
+        return o
+    }
+
+    /**
+     * For every square: is there a piece, and how bright is it. A pixel counts as "piece" when it differs from
+     * the empty square color AND is not strongly colored (hint dots and highlights are strongly green/yellow,
+     * the pieces are gray, white or black). `satLimit` = 256 turns the color filter off.
+     */
+    private fun observe(px: IntArray, w: Int, h: Int, board: BoardDetector.Geo, satLimit: Int): Obs {
         val occ = BooleanArray(64)
         val feat = IntArray(64)
         val base = IntArray(3)
@@ -103,6 +143,7 @@ class ChessModule : GameModule {
                         val gg = (p shr 8) and 0xFF
                         val b = p and 0xFF
                         all++
+                        if (max(r, max(gg, b)) - min(r, min(gg, b)) >= satLimit) continue
                         if (abs(r - base[0]) + abs(gg - base[1]) + abs(b - base[2]) > 70) {
                             diff++
                             hist[(r + gg + b) / 3]++
@@ -122,9 +163,7 @@ class ChessModule : GameModule {
                 }
             }
         }
-        val obs = Obs(occ, feat)
-        cachedObs = obs
-        return obs
+        return Obs(occ, feat)
     }
 
     /**
@@ -160,6 +199,15 @@ class ChessModule : GameModule {
         val highMin = if (bottomBright) botMin else topMin
         val t = if (lowMax < highMin) (lowMax + highMin) / 2 else (topMean + botMean) / 2
         return intArrayOf(t, if (bottomBright) 1 else 0)
+    }
+
+    /** Tries both observation modes. Returns [mode, threshold, weWhite(1/0)] or null. */
+    private fun calibrate(): IntArray? {
+        for (m in 0..1) {
+            val c = startCalibration(obsFor(m)) ?: continue
+            return intArrayOf(m, c[0], c[1])
+        }
+        return null
     }
 
     // ---------------------------------------------------------------- squares
@@ -211,6 +259,58 @@ class ChessModule : GameModule {
         return colorDiff
     }
 
+    // ---------------------------------------------------------------- following the game
+
+    private fun dfs(p: ChessPos, observed: IntArray, total: Int, left: Int) {
+        for (m in Chess.legalMoves(p)) {
+            path[total - left] = m
+            val q = Chess.apply(p, m)
+            if (left == 1) {
+                val c = cost(observed, expectedBoard(q))
+                if (c in 0..1 && c < bestCost) {
+                    bestCost = c
+                    bestPos = q
+                    bestPath = path.copyOf(total)
+                }
+            } else {
+                dfs(q, observed, total, left - 1)
+            }
+        }
+    }
+
+    /**
+     * Finds the shortest sequence of legal moves (0 to maxDepth plies) after which the position looks like the
+     * screen. Zero plies means nothing changed. Several plies happen when the opponent already answered.
+     */
+    private fun follow(p: ChessPos, observed: IntArray, maxDepth: Int): Found? {
+        val base = expectedBoard(p)
+        var occDiff = 0
+        for (s in 0..63) if ((base[s] == 0) != (observed[s] == 0)) occDiff++
+        if (occDiff == 0 && cost(observed, base) <= 1) return Found(p, 0, IntArray(0))
+        for (depth in 1..maxDepth) {
+            if (occDiff > 4 * depth) continue        // one ply changes at most 4 squares (castling)
+            bestPos = null
+            bestCost = Int.MAX_VALUE
+            dfs(p, observed, depth, depth)
+            val b = bestPos
+            if (b != null) return Found(b, depth, bestPath)
+        }
+        return null
+    }
+
+    /** After an Undo the screen shows an earlier position. Returns it (and forgets everything after it). */
+    private fun rollback(observed: IntArray): ChessPos? {
+        for (i in history.indices.reversed()) {
+            val c = cost(observed, expectedBoard(history[i]))
+            if (c in 0..1) {
+                val h = history[i]
+                while (history.size > i) history.removeAt(history.size - 1)
+                return h
+            }
+        }
+        return null
+    }
+
     // ---------------------------------------------------------------- decision
 
     override fun decide(frame: Bitmap): GameAction {
@@ -224,22 +324,27 @@ class ChessModule : GameModule {
             return GameAction.Tap(t[0] / cachedW.coerceAtLeast(1), t[1] / cachedH.coerceAtLeast(1))
         }
 
-        val obs = analyse(frame)
-        val g = geo
-        if (obs == null || g == null) {
+        if (!prepare(frame)) {
             AdviceLog.info("شطرنج: صفحه‌ی شطرنج پیدا نشد")
             return GameAction.Wait
         }
+        val g = geo ?: return GameAction.Wait
 
         // (Re)start tracking whenever the standard starting position is on the screen.
-        val start = startCalibration(obs)
+        val start = calibrate()
         val current = pos
         if (current == null || (start != null && !isStartPos(current))) {
-            if (start == null) return GameAction.Wait
-            threshold = start[0]
-            weWhite = start[1] == 1
+            if (start == null) {
+                AdviceLog.info("شطرنج: صفحه پیدا شد ولی بازی از وضعیت شروع نیست. در خود بازی Restart بزن تا ربات مهره‌ها را بشناسد")
+                nextAt = now + 1500L
+                return GameAction.Wait
+            }
+            mode = start[0]
+            threshold = start[1]
+            weWhite = start[2] == 1
             flipped = !weWhite
             pos = Chess.startPos()
+            history.clear()
             mismatch = 0
             stuck = 0
             lastPlanned = -1
@@ -247,31 +352,39 @@ class ChessModule : GameModule {
         }
         var p = pos ?: return GameAction.Wait
 
-        // Follow the game: find the legal move that explains what the screen shows.
-        val observed = observedBoard(obs)
-        val here = cost(observed, expectedBoard(p))
-        if (here < 0 || here > 1) {
-            var bestMove = -1
-            var bestCost = Int.MAX_VALUE
-            for (m in Chess.legalMoves(p)) {
-                val c = cost(observed, expectedBoard(Chess.apply(p, m)))
-                if (c in 0..1 && c < bestCost) { bestCost = c; bestMove = m }
-            }
-            if (bestMove == -1) {
+        // Follow the game: find the legal move(s) that explain what the screen shows.
+        val observed = observedBoard(obsFor(mode))
+        val found = follow(p, observed, if (mismatch >= 2) MAX_PLIES else 2)
+        if (found == null) {
+            val back = rollback(observed)
+            if (back != null) {
+                AdviceLog.info("شطرنج: حرکت برگشت داده شد (Undo)")
+                p = back
+                pos = p
+                mismatch = 0
+                stuck = 0
+                lastPlanned = -1
+            } else {
                 mismatch++
                 if (mismatch >= LOST_AFTER) {
-                    AdviceLog.info("شطرنج: وضعیت صفحه با بازی من نمی‌خواند؛ ردیابی از نو شروع می‌شود")
-                    pos = null
-                    mismatch = 0
+                    AdviceLog.info("شطرنج: وضعیت صفحه با بازی من نمی‌خواند؛ منتظر می‌مانم (با Restart در بازی دوباره شروع می‌شود)")
                 } else {
                     AdviceLog.info("شطرنج: صبر برای پایان انیمیشن...")
                 }
-                nextAt = now + 500L
+                nextAt = now + (if (mismatch >= LOST_AFTER) 1500L else 500L)
                 return GameAction.Wait
             }
-            val mover = if (p.whiteToMove == weWhite) "من" else "حریف"
-            AdviceLog.info("شطرنج: $mover ${Chess.name(bestMove)} بازی کرد")
-            p = Chess.apply(p, bestMove)
+        } else if (found.plies > 0) {
+            val sb = StringBuilder()
+            var side = p.whiteToMove
+            for (m in found.path) {
+                sb.append(if (side == weWhite) "من " else "حریف ").append(Chess.name(m)).append("  ")
+                side = !side
+            }
+            AdviceLog.info("شطرنج: $sb")
+            history.add(p)
+            while (history.size > 200) history.removeAt(0)
+            p = found.pos
             pos = p
             stuck = 0
             lastPlanned = -1
@@ -290,7 +403,7 @@ class ChessModule : GameModule {
             return GameAction.Wait
         }
 
-        // If the same move is planned again, the last touches did not work: try destination first to clear a stuck selection.
+        // If the same move is planned again, the last touches did not work: tap the destination first to clear a stuck selection.
         if (move == lastPlanned) stuck++ else stuck = 0
         lastPlanned = move
         val a = screenXY(Chess.from(move), g)
@@ -316,7 +429,9 @@ class ChessModule : GameModule {
         private const val DETECT_GAP_MS = 2500L
         private const val TAP_GAP_MS = 750L
         private const val SETTLE_MS = 2200L
-        private const val THINK_MS = 1300L
+        private const val THINK_MS = 2000L
         private const val LOST_AFTER = 14
+        private const val MAX_PLIES = 3
+        private const val SAT_LIMIT = 45
     }
 }

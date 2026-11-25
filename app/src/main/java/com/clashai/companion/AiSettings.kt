@@ -32,7 +32,13 @@ object AiSettings {
     @Volatile
     private var prefs: SharedPreferences? = null
 
+    /** Application context, used to save debug screenshots. */
+    @Volatile
+    var appContext: Context? = null
+        private set
+
     fun init(context: Context) {
+        appContext = context.applicationContext
         if (prefs == null) {
             prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         }

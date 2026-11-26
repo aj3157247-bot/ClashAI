@@ -54,6 +54,7 @@ class ChessModule : GameModule {
     private var mismatch = 0
     private var bootstrapped = false   // the position was read from the screen (not followed from the first move)
     private var lastBootstrapAt = 0L
+    private var noPiecesSince = 0L
 
     // Our pending touches and retry state.
     private val taps = ArrayDeque<FloatArray>()
@@ -71,9 +72,15 @@ class ChessModule : GameModule {
         if (!prepare(frame)) return false
         if (pos != null) return true
         if (calibrate() != null) return true
-        // A board is visible but the game is not at its start. Offline mode explains it in decide();
-        // smart mode lets the cloud AI play instead.
-        return !AiSettings.cloudAllowed()
+        // A board is visible but the game is not at its start: read the pieces from the screen.
+        val now = System.currentTimeMillis()
+        if (now - lastBootstrapAt >= BOOTSTRAP_GAP_MS && bootstrap(now)) {
+            noPiecesSince = 0L
+            return true
+        }
+        if (noPiecesSince == 0L) noPiecesSince = now
+        // Only when the pieces cannot be read for a long time does the cloud AI take over (hybrid mode).
+        return !AiSettings.cloudAllowed() || now - noPiecesSince < 10_000L
     }
 
     // ---------------------------------------------------------------- observation
@@ -138,6 +145,7 @@ class ChessModule : GameModule {
                 java.util.Arrays.fill(hist, 0)
                 var all = 0
                 var diff = 0
+                var hint = 0
                 for (y in ya..yb) {
                     for (x in xa..xb) {
                         val p = px[y * w + x]
@@ -145,6 +153,7 @@ class ChessModule : GameModule {
                         val gg = (p shr 8) and 0xFF
                         val b = p and 0xFF
                         all++
+                        if (gg - r > 50 && gg - b > 50) hint++
                         if (max(r, max(gg, b)) - min(r, min(gg, b)) >= satLimit) continue
                         if (abs(r - base[0]) + abs(gg - base[1]) + abs(b - base[2]) > 70) {
                             diff++
@@ -153,6 +162,35 @@ class ChessModule : GameModule {
                     }
                 }
                 val i = row * 8 + col
+                // A green "you can move here" diamond lying on an enemy piece hides much of its body. Then look at
+                // the upper part of the square (head and neck of the piece) instead.
+                if (satLimit < 256 && all > 0 && diff.toFloat() / all < 0.3f && hint * 10 >= all) {
+                    val ya2 = (board.y0 + (row + 0.00f) * board.cell).toInt().coerceIn(0, h - 1)
+                    val yb2 = (board.y0 + (row + 0.32f) * board.cell).toInt().coerceIn(ya2, h - 1)
+                    java.util.Arrays.fill(hist, 0)
+                    var all2 = 0
+                    var diff2 = 0
+                    for (y in ya2..yb2) {
+                        for (x in xa..xb) {
+                            val p = px[y * w + x]
+                            val r = (p shr 16) and 0xFF
+                            val gg = (p shr 8) and 0xFF
+                            val b = p and 0xFF
+                            all2++
+                            if (max(r, max(gg, b)) - min(r, min(gg, b)) >= satLimit) continue
+                            if (abs(r - base[0]) + abs(gg - base[1]) + abs(b - base[2]) > 70) {
+                                diff2++
+                                hist[(r + gg + b) / 3]++
+                            }
+                        }
+                    }
+                    if (all2 > 0 && diff2.toFloat() / all2 >= 0.3f) {
+                        all = all2
+                        diff = diff2
+                    } else {
+                        java.util.Arrays.fill(hist, 0)
+                    }
+                }
                 if (all > 0 && diff.toFloat() / all >= 0.3f) {
                     occ[i] = true
                     var acc = 0
@@ -359,7 +397,7 @@ class ChessModule : GameModule {
         for (i in 0..63) {
             val f = feats[i] ?: continue
             val bright = obs.feat[i] > t
-            val piece = PieceClassifier.classify(f, bright)
+            val piece = PieceClassifier.classify(f, bright, PieceClassifier.hintOnSquare(px, cachedW, cachedH, g, i / 8, i % 8))
             if (piece == 0) return false
             kind[i] = piece
             if (piece == Chess.K) brightKingRow = i / 8

@@ -190,6 +190,8 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
                 throw RateLimitException(conn.getHeaderField("retry-after")?.toLongOrNull() ?: 20L)
             }
             if (code >= 500) throw TransientHttpException("HTTP $code")
+            if (code == 401 || code == 403) throw IllegalStateException("کلید API پذیرفته نشد (HTTP $code). کلید را دوباره بررسی کن")
+            if (code == 404) throw IllegalStateException("آدرس یا نام مدل پیدا نشد (HTTP 404). آدرس API و نام مدل را در تنظیمات بررسی کن")
             if (code !in 200..299) throw IllegalStateException("HTTP $code: ${text.take(200)}")
             val content = JSONObject(text)
                 .getJSONArray("choices")

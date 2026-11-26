@@ -35,6 +35,9 @@ class GrokGameModule : GameModule {
     @Volatile private var backoffUntil = 0L
 
     private var lastRequestAt = 0L
+
+    /** Grows after every "too many requests" answer and shrinks after good answers, so the bot adapts to the API limit. */
+    @Volatile private var adaptiveGapMs = 0L
     private var lastActionAt = 0L
     private var lastSignature: IntArray? = null
 
@@ -79,7 +82,7 @@ class GrokGameModule : GameModule {
         // 2) Ask the AI again only when it makes sense.
         if (pending) return GameAction.Wait
         if (now - lastActionAt < (if (AiSettings.realtime) 200L else SETTLE_MS)) return GameAction.Wait
-        if (now - lastRequestAt < (if (AiSettings.realtime) 600L else AiSettings.requestGapMs)) return GameAction.Wait
+        if (now - lastRequestAt < Math.max(adaptiveGapMs, if (AiSettings.realtime) 1500L else AiSettings.requestGapMs)) return GameAction.Wait
 
         val sig = signature(frame)
         val previous = lastSignature
@@ -137,6 +140,7 @@ class GrokGameModule : GameModule {
                 )
                 if (!advice.myTurn) actions = emptyList()
 
+                adaptiveGapMs = adaptiveGapMs * 9L / 10L
                 waitStreak = if (actions.isEmpty()) waitStreak + 1 else 0
                 AdviceLog.info(
                     AdviceLog.lastText + " | " +
@@ -157,8 +161,10 @@ class GrokGameModule : GameModule {
                     awaitingEffect = true
                 }
             } catch (e: RateLimitException) {
-                backoffUntil = System.currentTimeMillis() + e.retryAfterSeconds * 1000L
-                AdviceLog.error("سقف سرعت API پر شد؛ ${e.retryAfterSeconds} ثانیه صبر می‌کند")
+                val wait = Math.max(5L, e.retryAfterSeconds)
+                backoffUntil = System.currentTimeMillis() + wait * 1000L
+                adaptiveGapMs = Math.min(30000L, Math.max(AiSettings.requestGapMs, adaptiveGapMs) * 2L)
+                AdviceLog.error("سقف سرعت API پر شد؛ $wait ثانیه صبر می‌کند و فاصله‌ی درخواست‌ها بیشتر شد (حالا ${adaptiveGapMs / 1000} ثانیه)")
             } catch (e: Exception) {
                 backoffUntil = System.currentTimeMillis() + 3000L
                 AdviceLog.error(e.message ?: "خطای نامشخص")

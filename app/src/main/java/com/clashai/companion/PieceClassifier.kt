@@ -186,9 +186,11 @@ object PieceClassifier {
         return out
     }
 
-    private fun dist(a: FloatArray, b: FloatArray): Float {
+    private fun dist(a: FloatArray, b: FloatArray, hint: Boolean): Float {
         var s = 0f
         for (i in 0 until LEN) {
+            // With a hint diamond, grid rows 4..8 (the middle of the piece) are covered: skip them.
+            if (hint && (i / GX) in 4..8) continue
             val d = a[i] - b[i]
             s += d * d
         }
@@ -199,14 +201,14 @@ object PieceClassifier {
      * Returns the signed engine piece (+1..+6 white, -1..-6 black) or 0 when this is not a known piece
      * (an unknown piece set, a half hidden piece...). `white` = the side already decided from brightness.
      */
-    fun classify(f: FloatArray, white: Boolean): Int {
+    fun classify(f: FloatArray, white: Boolean, hint: Boolean = false): Int {
         val t = templates()
         val base = if (white) 0 else 6
         var best = -1
         var bestD = Float.MAX_VALUE
         var second = Float.MAX_VALUE
         for (k in 0..5) {
-            val d = dist(f, t[base + k])
+            val d = dist(f, t[base + k], hint)
             if (d < bestD) {
                 second = bestD
                 bestD = d
@@ -215,10 +217,33 @@ object PieceClassifier {
                 second = d
             }
         }
-        if (best < 0 || bestD > MAX_DIST) return 0
+        // With a hint diamond only 5 of the 10 grid rows are compared, so the limit is lower.
+        val limit = if (hint) MAX_DIST * 0.5f else MAX_DIST
+        if (best < 0 || bestD > limit) return 0
         if (second < bestD * MIN_RATIO) return 0
         val code = best + 1
         return if (white) code else -code
+    }
+
+    /** True when a green "you can move here" diamond lies on this square (it hides the middle of a piece). */
+    fun hintOnSquare(px: IntArray, w: Int, h: Int, g: BoardDetector.Geo, row: Int, col: Int): Boolean {
+        val xa = (g.x0 + (col + 0.30f) * g.cell).toInt().coerceIn(0, w - 1)
+        val xb = (g.x0 + (col + 0.70f) * g.cell).toInt().coerceIn(xa, w - 1)
+        val ya = (g.y0 + (row + 0.35f) * g.cell).toInt().coerceIn(0, h - 1)
+        val yb = (g.y0 + (row + 0.75f) * g.cell).toInt().coerceIn(ya, h - 1)
+        var all = 0
+        var green = 0
+        for (y in ya..yb) {
+            for (x in xa..xb) {
+                val p = px[y * w + x]
+                val r = (p shr 16) and 0xFF
+                val gg = (p shr 8) and 0xFF
+                val b = p and 0xFF
+                all++
+                if (gg - r > 50 && gg - b > 50) green++
+            }
+        }
+        return all > 0 && green * 10 >= all
     }
 
     // ------------------------------------------------------------------ learning

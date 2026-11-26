@@ -75,7 +75,7 @@ object AiSettings {
 
     /** Minimum time between two cloud requests. Lower is faster but may hit the API rate limit. */
     var requestGapMs: Long
-        get() = prefs?.getLong(KEY_GAP, 3000L) ?: 3000L
+        get() = prefs?.getLong(KEY_GAP, 6000L) ?: 6000L
         set(value) {
             prefs?.edit()?.putLong(KEY_GAP, value.coerceIn(1000L, 30000L))?.apply()
         }

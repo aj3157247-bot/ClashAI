@@ -9,7 +9,7 @@ import android.os.HandlerThread
  */
 object AgentLoop {
 
-    private const val TICK_MS = 300L
+    private const val TICK_MS = 200L
     private const val FAST_TICK_MS = 150L
 
     /** In "hybrid" mode: if a local game module has done nothing for this long, the cloud AI takes one look. */
@@ -56,7 +56,7 @@ object AgentLoop {
     private var capturing = false
 
     // Android allows only a few screenshots per second, so space them out.
-    private const val CAPTURE_GAP_MS = 700L
+    private const val CAPTURE_GAP_MS = 450L
     private const val FAST_CAPTURE_GAP_MS = 400L
     private var lastCaptureAt = 0L
     private var lastActionAt = 0L

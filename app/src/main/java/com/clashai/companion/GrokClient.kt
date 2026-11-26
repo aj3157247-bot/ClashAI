@@ -135,7 +135,7 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
 
     private fun buildPrompt(ctx: AgentContext): String {
         val pack = GameKnowledge.byId(ctx.gameId)
-        val gameText = if (pack != null) "KNOWN GAME: " + pack.title + "\n" + pack.rules
+        val gameText = if (pack != null) "KNOWN GAME: " + pack.title + "\n" + (if (AiSettings.realtime && pack.compact != null) pack.compact else pack.rules)
         else "GAME NOT IDENTIFIED YET. First identify it. Known games: " + GameKnowledge.idList() + ".\n" + GameKnowledge.GENERIC_RULES
         val historyText = if (ctx.history.isEmpty()) "No previous actions yet."
         else "RECENT ACTIONS (oldest first):\n" + ctx.history.joinToString("\n") { "- $it" }
@@ -211,7 +211,7 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
         val body = JSONObject()
             .put("model", model.trim())
             .put("temperature", 0.15)
-            .put("max_tokens", if (AiSettings.realtime) 900 else 2000)
+            .put("max_tokens", if (AiSettings.realtime) 600 else 2000)
             .put("messages", JSONArray().put(message))
         // Both default models can "think" first, and the thinking uses up the token budget so the JSON answer never arrives.
         // Switch thinking off where the provider supports it; on HTTP 400 the request is repeated without these extras.

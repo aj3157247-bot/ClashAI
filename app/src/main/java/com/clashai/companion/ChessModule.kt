@@ -635,7 +635,7 @@ class ChessModule : GameModule {
         mismatch = 0
 
         if (p.whiteToMove != weWhite) {
-            nextAt = now + 600L
+            nextAt = now + 350L
             return GameAction.Wait
         }
 
@@ -679,9 +679,9 @@ class ChessModule : GameModule {
 
     companion object {
         private const val DETECT_GAP_MS = 2500L
-        private const val TAP_GAP_MS = 750L
-        private const val SETTLE_MS = 2200L
-        private const val THINK_MS = 2000L
+        private const val TAP_GAP_MS = 400L
+        private const val SETTLE_MS = 1300L
+        private const val THINK_MS = 1400L
         private const val LOST_AFTER = 14
         private const val RESYNC_AFTER = 4
         private const val BOOTSTRAP_GAP_MS = 1500L

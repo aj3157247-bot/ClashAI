@@ -6,7 +6,7 @@ package com.aiplayer.companion
  * to the prompt once the game is known. A focused pack makes the model much stronger than a
  * generic prompt.
  */
-class GamePack(val id: String, val title: String, val keywords: List<String>, val rules: String, val realtime: Boolean = false)
+class GamePack(val id: String, val title: String, val keywords: List<String>, val rules: String, val realtime: Boolean = false, val compact: String? = null)
 
 object GameKnowledge {
 
@@ -68,7 +68,19 @@ object GameKnowledge {
 
             MERGE TACTICS MODE: if the screen shows a hex-tile board, "Round / Battle Phase", Time left and 4 player portraits on top, it is an auto-battler. Cards in the tray cost elixir; deploy by swiping a card onto a free hex on YOUR side (bottom half); troops fight by themselves during the battle phase, so then answer wait.
             Buy and place troops during the preparation phase while you have elixir; put tanks in the front row (closest to the enemy) and ranged troops in the back; three identical troops merge into a stronger one, so prefer the card you already own; keep a balanced team; do not leave elixir unused.
-            """.trimIndent(), true
+            """.trimIndent(), true,
+            """
+            CLASH ROYALE, real-time. Answer FAST and short (reason under 8 words).
+            "screen": elixir=N; hand=slot1(cost),slot2(cost),slot3(cost),slot4(cost); threats=lane+unit; mode=..; time=mm:ss. "memo": enemy cards seen, their last play, weak lane.
+            The controller gives the MEASURED ELIXIR: play only a card whose cost is at most that number.
+            ACTION: exactly one {"type":"card","slot":1-4,"lane":"left|right|center","where":"bridge|mid|back"} or wait. slot = position in the bottom tray from the LEFT. For a spell or an exact target: {"type":"card","slot":N,"x":0.0,"y":0.0,"free":true}. Never use swipe or tap for cards.
+            where: bridge = your side of the bridge (attack / bridge rush), mid = in front of your princess tower, back = beside the tower toward the king (safe defense, anti-air, buildings).
+            PLAN: opening: wait for about 6-7 elixir, then one cheap card in the back and react. React to what the enemy plays (they are now low on elixir): put the counter on the attacked lane near your tower, make positive trades. Never sit at 9-10 elixir: start a push or play value. After a won defense push that lane: tank in front, ranged support behind. Spells only on 2+ units or to finish a tower.
+            COUNTERS: swarms -> Zap/Log/Arrows/splash; air -> Archers/Musketeer/Minions/Tesla; tanks -> kite, then high damage (Inferno, Mini P.E.K.K.A, Barbarians); Hog/Ram -> Cannon/Tesla/Mini P.E.K.K.A/Skeletons; glass cannons -> Zap/Log/Fireball; buildings in the middle pull tanks.
+            Last minute and overtime = faster elixir: be aggressive on the weak lane; overtime: first tower wins, guard the king tower.
+            MODES: read the banner. 2v2: cover the lane your ally leaves; Draft: tap one card per pick, balanced deck; Merge Tactics (hex board, rounds): put cards on free hexes of your half, tanks in front; fast-elixir modes: never idle.
+            MENUS: tap Battle / OK / Continue / free Claim; never buy; hand=loading or no hand visible: wait.
+            """.trimIndent()
         ),
         GamePack(
             "racing", "Car racing", listOf("racing", "asphalt", "carx", "needforspeed", "trafficracer", "hillclimb", "drift", "rally", "burnout", "speed", "forza", "csr"),

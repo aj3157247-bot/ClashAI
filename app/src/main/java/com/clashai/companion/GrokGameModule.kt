@@ -95,12 +95,18 @@ class GrokGameModule : GameModule {
         if (pending) return GameAction.Wait
         if (now - lastActionAt < (if (AiSettings.realtime) 200L else SETTLE_MS)) return GameAction.Wait
         val royale = gameId == "clashroyale"
-        val realGap = if (royale) 900L else 1500L
-        if (now - lastRequestAt < Math.max(adaptiveGapMs, if (AiSettings.realtime) realGap else AiSettings.requestGapMs)) return GameAction.Wait
+        // Free API plans allow only a limited number of requests and tokens per minute. Asking too often makes every
+        // answer a "rate limit" error and the bot then stops for many seconds, which is far slower than a steady pace.
+        // So the pace follows the gap set in the settings (about a third of it, 1.5 to 4 s) and is shorter when the elixir is nearly full.
+        val baseGap = (AiSettings.requestGapMs * 35L / 100L).coerceIn(1500L, 4000L)
+        val realGap = if (royale) baseGap else 1500L
+        val elixirNow = if (royale) ClashLayout.elixirOf(frame) else -1f
+        val paceGap = if (royale && elixirNow >= 9f) Math.min(realGap, 1500L) else realGap
+        if (now - lastRequestAt < Math.max(adaptiveGapMs, if (AiSettings.realtime) paceGap else AiSettings.requestGapMs)) return GameAction.Wait
 
         // Clash Royale: the elixir is read from the bar on the phone, with no cloud call. With less than 2 elixir
         // nothing useful can be played, so no request is made (saves the AI quota and keeps it fast when it matters).
-        val elixir = if (royale) ClashLayout.elixirOf(frame) else -1f
+        val elixir = elixirNow
         if (royale && elixir >= 0f && elixir < 2f) {
             AdviceLog.info("کلش رویال | الکسیر %.1f | منتظر الکسیر".format(elixir))
             return GameAction.Wait
@@ -146,7 +152,7 @@ class GrokGameModule : GameModule {
         val ctx = AgentContext(gameId, ctxHistory, boardNote + hint, grid, memo)
 
         // The frame is recycled by AgentLoop after this call, so render a copy for the worker.
-        val image = GridOverlay.render(frame, if (AiSettings.realtime) 720 else 1080, grid, board)
+        val image = GridOverlay.render(frame, if (royale) 600 else if (AiSettings.realtime) 720 else 1080, grid, board)
         val sentW = image.width.toFloat()
         val sentH = image.height.toFloat()
         val frameW = frame.width.toFloat()
@@ -191,12 +197,14 @@ class GrokGameModule : GameModule {
                     awaitingEffect = true
                 }
             } catch (e: RateLimitException) {
-                val wait = Math.max(5L, e.retryAfterSeconds)
+                val rt = AiSettings.realtime
+                val wait = if (rt) Math.min(3L, Math.max(2L, e.retryAfterSeconds)) else Math.max(5L, e.retryAfterSeconds)
                 backoffUntil = System.currentTimeMillis() + wait * 1000L
-                adaptiveGapMs = Math.min(30000L, Math.max(AiSettings.requestGapMs, adaptiveGapMs) * 2L)
+                adaptiveGapMs = if (rt) Math.min(4000L, Math.max(1500L, adaptiveGapMs * 3L / 2L + 500L))
+                else Math.min(30000L, Math.max(AiSettings.requestGapMs, adaptiveGapMs) * 2L)
                 AdviceLog.error("سقف سرعت API پر شد؛ $wait ثانیه صبر می‌کند و فاصله‌ی درخواست‌ها بیشتر شد (حالا ${adaptiveGapMs / 1000} ثانیه)")
             } catch (e: Exception) {
-                backoffUntil = System.currentTimeMillis() + 3000L
+                backoffUntil = System.currentTimeMillis() + (if (AiSettings.realtime) 1500L else 3000L)
                 AdviceLog.error(e.message ?: "خطای نامشخص")
             } finally {
                 image.recycle()

@@ -94,7 +94,17 @@ class GrokGameModule : GameModule {
         // 2) Ask the AI again only when it makes sense.
         if (pending) return GameAction.Wait
         if (now - lastActionAt < (if (AiSettings.realtime) 200L else SETTLE_MS)) return GameAction.Wait
-        if (now - lastRequestAt < Math.max(adaptiveGapMs, if (AiSettings.realtime) 1500L else AiSettings.requestGapMs)) return GameAction.Wait
+        val royale = gameId == "clashroyale"
+        val realGap = if (royale) 900L else 1500L
+        if (now - lastRequestAt < Math.max(adaptiveGapMs, if (AiSettings.realtime) realGap else AiSettings.requestGapMs)) return GameAction.Wait
+
+        // Clash Royale: the elixir is read from the bar on the phone, with no cloud call. With less than 2 elixir
+        // nothing useful can be played, so no request is made (saves the AI quota and keeps it fast when it matters).
+        val elixir = if (royale) ClashLayout.elixirOf(frame) else -1f
+        if (royale && elixir >= 0f && elixir < 2f) {
+            AdviceLog.info("کلش رویال | الکسیر %.1f | منتظر الکسیر".format(elixir))
+            return GameAction.Wait
+        }
 
         val sig = signature(frame)
         val previous = lastSignature
@@ -119,12 +129,17 @@ class GrokGameModule : GameModule {
         lastSignature = sig
         pending = true
 
-        val grid = AiSettings.gridOverlay
+        val grid = AiSettings.gridOverlay && !royale
         val ctxHistory = synchronized(this) { history.toList() }
-        val hint = if (waitStreak >= 2)
+        val elixirHint = if (royale && elixir >= 0f)
+            "MEASURED ELIXIR (exact, from the bar): %.1f. ".format(elixir) +
+                (if (elixir >= 9.5f) "The bar is full: play a card now, wasting elixir is a mistake. " else "") +
+                "Only cards whose cost is at most %d can be played now. ".format(elixir.toInt())
+        else ""
+        val hint = elixirHint + if (waitStreak >= 2 && !royale)
             "The last answers were wait. If a roll, play, pass, end-turn, continue or next button is visible and it is the player's turn, tap it now. Do not answer wait."
         else ""
-        val board = findBoard(frame)
+        val board = if (royale) null else findBoard(frame)
         val boardNote = if (board == null) "" else
             "A checkerboard was detected. The controller drew its cells in cyan, labeled A1 (top-left) to H8 (bottom-right): letter = column left to right, number = row top to bottom. " +
                 "Decide which cell to touch and aim at the exact center of that cell; the touch is snapped to the cell center automatically. "
@@ -222,6 +237,24 @@ class GrokGameModule : GameModule {
             return floatArrayOf(board.centerX(col) / frameW, board.centerY(row) / frameH)
         }
 
+        if (s.type == "card") {
+            // Clash Royale: slot (1..4) + lane + spot -> exact touch from the card to the arena.
+            if (s.slot !in 1..4) return null
+            val from = ClashLayout.slotCenter(s.slot)
+            val spot = if (s.lane.isNotBlank()) ClashLayout.spot(s.lane, s.where) else null
+            val tx: Float
+            val ty: Float
+            if (spot != null) {
+                tx = spot[0]; ty = spot[1]
+            } else {
+                tx = norm(s.x, imageW)
+                val rawY = norm(s.y, imageH)
+                ty = if (s.free) rawY.coerceIn(ClashLayout.ARENA_TOP, ClashLayout.OWN_BOTTOM)
+                else rawY.coerceIn(ClashLayout.OWN_TOP, ClashLayout.OWN_BOTTOM)
+            }
+            return GameAction.Swipe(from[0], from[1], tx, ty, 280L)
+        }
+
         val p1 = snap(norm(s.x, imageW), norm(s.y, imageH))
         return when (s.type) {
             "tap" -> GameAction.Tap(p1[0], p1[1])
@@ -230,9 +263,9 @@ class GrokGameModule : GameModule {
                 val p2 = snap(norm(s.x2, imageW), norm(s.y2, imageH))
                 var ty = p2[1]
                 var dur = if (s.ms > 0L) s.ms else 300L
-                if (gameId == "clashroyale" && p1[1] > 0.86f) {
+                if (gameId == "clashroyale" && p1[1] > ClashLayout.TRAY_TOP) {
                     // A card dragged out of the tray: it must land on the player's half and never back on the tray.
-                    ty = ty.coerceIn(0.55f, 0.80f)
+                    ty = ty.coerceIn(ClashLayout.OWN_TOP, ClashLayout.OWN_BOTTOM)
                     dur = dur.coerceIn(200L, 450L)
                 }
                 GameAction.Swipe(p1[0], p1[1], p2[0], ty, dur)

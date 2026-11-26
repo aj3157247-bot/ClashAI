@@ -24,6 +24,16 @@ import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
+    override fun onResume() {
+        super.onResume()
+        AppState.inFront = true
+    }
+
+    override fun onPause() {
+        AppState.inFront = false
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AiSettings.init(this)

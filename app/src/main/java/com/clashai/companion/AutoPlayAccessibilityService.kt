@@ -52,7 +52,14 @@ class AutoPlayAccessibilityService : AccessibilityService() {
 
     fun isHudShown(): Boolean = hud?.isShown() == true
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    /** Last app (other than this one) that opened a window. Used when the floating panel steals the "active window". */
+    @Volatile private var lastForeign: String? = null
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg != packageName && pkg != "com.android.systemui" && !pkg.contains("inputmethod")) lastForeign = pkg
+    }
 
     override fun onInterrupt() {}
 
@@ -66,7 +73,14 @@ class AutoPlayAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    fun currentPackage(): String? = rootInActiveWindow?.packageName?.toString()
+    fun currentPackage(): String? {
+        val p = rootInActiveWindow?.packageName?.toString()
+        // Tapping the floating panel makes it the active window; that must not look like "this app is in front",
+        // otherwise the bot stops playing until the user touches the game again.
+        if (p == packageName && !AppState.inFront) return lastForeign
+        if (p == null) return lastForeign
+        return p
+    }
 
     /**
      * Takes a screenshot on demand (Android 12+). Unlike MediaProjection, this works

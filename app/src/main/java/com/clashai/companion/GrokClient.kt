@@ -28,7 +28,12 @@ data class Step(
     /** Steps with the same group number (> 0) are touched at the same time with different fingers. */
     val group: Int = 0,
     /** Start time of this step, in ms after the first one (a timed plan). */
-    val at: Long = 0L
+    val at: Long = 0L,
+    /** Clash Royale card action: tray slot 1..4, lane and spot; free = a spell that may target the enemy half. */
+    val slot: Int = 0,
+    val lane: String = "",
+    val where: String = "",
+    val free: Boolean = false
 )
 
 data class Advice(
@@ -84,7 +89,11 @@ data class Advice(
                 y2 = o.optDouble("y2", y).toFloat(),
                 ms = o.optLong("ms", 0L),
                 group = o.optInt("group", 0),
-                at = o.optLong("at", 0L)
+                at = o.optLong("at", 0L),
+                slot = o.optInt("slot", 0),
+                lane = o.optString("lane", ""),
+                where = o.optString("where", ""),
+                free = o.optBoolean("free", false)
             )
         }
     }

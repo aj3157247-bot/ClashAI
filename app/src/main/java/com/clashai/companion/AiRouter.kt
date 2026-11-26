@@ -75,7 +75,7 @@ object AiRouter {
         val b64 = GrokClient.encodeFrame(frame)   // after this the bitmap is no longer needed
         val list = order(all)
 
-        val hedgeMs = if (AiSettings.realtime) 2500L else 9000L
+        val hedgeMs = if (AiSettings.realtime) 1800L else 9000L
         val deadline = System.currentTimeMillis() + 75_000L
         val queue = LinkedBlockingQueue<Outcome>()
         var launched = 0

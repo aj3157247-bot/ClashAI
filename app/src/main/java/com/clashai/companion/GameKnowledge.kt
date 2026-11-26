@@ -19,8 +19,11 @@ object GameKnowledge {
             In the "memo" field keep notes for yourself (max 200 chars): opponent cards seen so far, their last deploy and an elixir estimate, which lane is weak, whether you are ahead on towers.
 
             ARENA. Two lanes (left, right), a river with two bridges in the middle, 3 towers each side (2 princess towers + the king tower behind them). You can deploy ONLY on your own half (below the river), plus behind a lane where an enemy princess tower is destroyed.
-            DEPLOY: SWIPE from the card in the bottom tray to the target spot (type swipe, ms 250). Keep the card swipe start exactly at the center of the card. Never target the bottom tray or the enemy half.
-            Placement spots: behind your princess tower line = safe defense; at the bridge on your side = fast attack; in the center of your half behind the king = anti-air or building pull; far back (just in front of the king tower) = slow push start.
+            The controller measures the ELIXIR from the bar and tells you the exact value (for example 9.2): trust it over your own reading. If it says elixir is below 2 you will not be asked.
+            DEPLOY with exactly ONE action per answer: {"type":"card","slot":N,"lane":"left|right|center","where":"bridge|mid|back"}. slot = the card position in the bottom tray counted from the LEFT (1, 2, 3 or 4). The controller turns it into the exact touch; never write pixel coordinates for a normal card and never use swipe or tap for cards.
+            where = bridge: on your side of the bridge (fast attack, or meeting a bridge rush); mid: in front of your princess tower (normal defense and push start); back: beside the tower toward your king (safe defense, anti-air, building).
+            Spells and exact targets (Fireball on a tower or a group, Zap on a swarm, Log): {"type":"card","slot":N,"x":0.0,"y":0.0,"free":true} with normalized screenshot coordinates of the target; the controller keeps free=false drops on your half.
+            If the best play is to wait, answer wait. Keep the reason under 8 words: speed matters more than long explanations.
 
             ELIXIR DISCIPLINE (most important). Elixir regenerates 1 per 2.8 s (1 per 1.4 s in the last minute and overtime = double elixir, 1 per 0.9 s at triple).
             - Opening: do NOT play anything for the first seconds. At about 7-8 elixir play one cheap defensive/cycle card in the back, then react to the opponent. Answer wait while elixir is low or while you have nothing useful.

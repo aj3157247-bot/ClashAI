@@ -15,7 +15,9 @@ class AgentContext(
     val gameId: String?,
     val history: List<String>,
     val hint: String,
-    val gridOverlay: Boolean
+    val gridOverlay: Boolean,
+    /** Notes the AI wrote for itself in the previous step (opponent cards seen, elixir estimate...). */
+    val memo: String = ""
 )
 
 /** One touch the AI wants to make. Coordinates are 0..1 (or pixels; the module normalizes). */
@@ -36,7 +38,8 @@ data class Advice(
     val myTurn: Boolean,
     val confidence: Float,
     val steps: List<Step>,
-    val reason: String
+    val reason: String,
+    val memo: String = ""
 ) {
     companion object {
         private val THINK = Regex("<think>[\\s\\S]*?</think>")
@@ -65,7 +68,8 @@ data class Advice(
                 myTurn = j.optBoolean("my_turn", true),
                 confidence = j.optDouble("confidence", 0.5).toFloat(),
                 steps = steps,
-                reason = j.optString("reason", "")
+                reason = j.optString("reason", ""),
+                memo = j.optString("memo", "").take(300)
             )
         }
 
@@ -111,7 +115,7 @@ If the last action had NO visible effect (see the history), do not repeat the sa
 %HISTORY%
 
 Respond with ONLY one JSON object, no markdown, no extra text:
-{"game":"short game name","game_id":"one of: %IDS%","screen":"short state description incl. dice=N when a die is shown","my_turn":true,"confidence":0.0,"actions":[{"type":"tap|swipe|hold|wait","x":0.0,"y":0.0,"x2":0.0,"y2":0.0}],"reason":"one short sentence in Persian (Farsi)"}
+{"game":"short game name","game_id":"one of: %IDS%","screen":"short state description incl. dice=N when a die is shown","my_turn":true,"confidence":0.0,"actions":[{"type":"tap|swipe|hold|wait","x":0.0,"y":0.0,"x2":0.0,"y2":0.0}],"reason":"one short sentence in Persian (Farsi)","memo":"max 200 chars of notes for your next step (optional)"}
 For tap and hold use x and y only. For swipe also set x2 and y2. For wait the coordinates are ignored.
 Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and "group" = a number; actions with the same group number are touched at the same time with different fingers (for example hold the gas and steer).
 """
@@ -126,13 +130,14 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
         else "GAME NOT IDENTIFIED YET. First identify it. Known games: " + GameKnowledge.idList() + ".\n" + GameKnowledge.GENERIC_RULES
         val historyText = if (ctx.history.isEmpty()) "No previous actions yet."
         else "RECENT ACTIONS (oldest first):\n" + ctx.history.joinToString("\n") { "- $it" }
+        val notesText = if (ctx.memo.isBlank()) "" else "\nYOUR NOTES FROM THE LAST STEP (trust them, update them): " + ctx.memo
         val gridText = if (ctx.gridOverlay)
             "The magenta grid and the small numbers on the edges were drawn by the controller. They are exact coordinates, not part of the game. Use them to place your touch precisely."
         else ""
         var p = BASE
             .replace("%GRID%", gridText)
             .replace("%GAME%", gameText)
-            .replace("%HISTORY%", historyText)
+            .replace("%HISTORY%", historyText + notesText)
             .replace("%IDS%", GameKnowledge.idList())
         if (AiSettings.realtime) p += REALTIME_NOTE
         if (ctx.hint.isNotEmpty()) p += "\nIMPORTANT: " + ctx.hint

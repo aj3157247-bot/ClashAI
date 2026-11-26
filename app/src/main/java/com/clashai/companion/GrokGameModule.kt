@@ -34,6 +34,8 @@ class GrokGameModule : GameModule {
     @Volatile private var lockedByPackage = false
     @Volatile private var currentPackage: String? = null
     @Volatile private var waitStreak = 0
+    /** Notes the AI keeps for itself between requests (opponent cards seen, elixir estimate...). */
+    @Volatile private var memo: String = ""
     @Volatile private var backoffUntil = 0L
 
     private var lastRequestAt = 0L
@@ -65,6 +67,7 @@ class GrokGameModule : GameModule {
         lockedByPackage = pack != null
         AiSettings.autoRealtime = pack?.realtime == true
         waitStreak = 0
+        memo = ""
         lastSignature = null
         actionSignature = null
         awaitingEffect = false
@@ -125,7 +128,7 @@ class GrokGameModule : GameModule {
         val boardNote = if (board == null) "" else
             "A checkerboard was detected. The controller drew its cells in cyan, labeled A1 (top-left) to H8 (bottom-right): letter = column left to right, number = row top to bottom. " +
                 "Decide which cell to touch and aim at the exact center of that cell; the touch is snapped to the cell center automatically. "
-        val ctx = AgentContext(gameId, ctxHistory, boardNote + hint, grid)
+        val ctx = AgentContext(gameId, ctxHistory, boardNote + hint, grid, memo)
 
         // The frame is recycled by AgentLoop after this call, so render a copy for the worker.
         val image = GridOverlay.render(frame, if (AiSettings.realtime) 720 else 1080, grid, board)
@@ -140,6 +143,7 @@ class GrokGameModule : GameModule {
                 val advice = AiRouter.ask(image, ctx)
                 AdviceLog.update(advice)
                 learnGame(advice)
+                if (advice.memo.isNotBlank()) memo = advice.memo
 
                 val planned = mergeGroups(
                     advice.steps.mapNotNull { st -> toAction(st, sentW, sentH, board, frameW, frameH)?.let { a -> Triple(st.group, st.at, a) } }
@@ -224,7 +228,14 @@ class GrokGameModule : GameModule {
             "hold" -> GameAction.Hold(p1[0], p1[1], if (s.ms > 0L) s.ms else 500L)
             "swipe" -> {
                 val p2 = snap(norm(s.x2, imageW), norm(s.y2, imageH))
-                GameAction.Swipe(p1[0], p1[1], p2[0], p2[1], if (s.ms > 0L) s.ms else 300L)
+                var ty = p2[1]
+                var dur = if (s.ms > 0L) s.ms else 300L
+                if (gameId == "clashroyale" && p1[1] > 0.86f) {
+                    // A card dragged out of the tray: it must land on the player's half and never back on the tray.
+                    ty = ty.coerceIn(0.55f, 0.80f)
+                    dur = dur.coerceIn(200L, 450L)
+                }
+                GameAction.Swipe(p1[0], p1[1], p2[0], ty, dur)
             }
             else -> null
         }

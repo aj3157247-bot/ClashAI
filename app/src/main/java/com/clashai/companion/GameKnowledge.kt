@@ -14,17 +14,47 @@ object GameKnowledge {
         GamePack(
             "clashroyale", "Clash Royale", listOf("clashroyale", "royale"),
             """
-            CLASH ROYALE (real-time, 2 or 4 players, 3 minutes + overtime). The arena is split by a river; you may deploy ONLY on your own half (bottom), plus the area near a tower you have destroyed.
-            Your hand is the 4 cards at the bottom; the next card is shown small at the left. The elixir bar is the purple bar at the bottom: read the number. A card can be played only if elixir >= its cost (the number on the card).
-            To deploy: SWIPE from the card to the target spot (ms about 250). If a card is already selected (highlighted), a single tap on the target spot also works.
-            Rules of thumb:
-            1) Do not spend elixir when the opponent has not committed: wait until elixir is 6+ (waiting is correct here, answer wait), unless the opponent is attacking.
-            2) DEFEND first: place the defender BEHIND your princess tower on the lane being attacked (close to the king tower), so the tower helps. Ranged or splash vs swarms, tanks/buildings vs big tanks.
-            3) After a successful defense, counter-push with the surviving unit: put a support card (ranged or splash) behind it and a tank in front.
-            4) Never spend more elixir than the opponent just spent unless you win value. Keep a cheap cycle card for emergencies.
-            5) Use spells (zap, fireball, arrows) only when they kill 2+ units or finish a tower. Use buildings (cannon, tesla) in the middle of the defending half to pull tanks.
-            6) In double elixir (last minute / overtime) be aggressive on the weaker lane; in overtime any destroyed tower wins.
-            Menus: tap Battle to start, tap OK / Continue after a match. Never open the shop, never tap Buy / chest-unlock-with-gems / pass royale offers.
+            CLASH ROYALE, played like a top-ladder player. Real-time: you are asked every 1.5-3 seconds, so every answer must be a COMPLETE decision.
+            FIRST, in the "screen" field, always write: elixir=N; hand=slot1(cost),slot2(cost),slot3(cost),slot4(cost); threats=lane+unit+how far it has come; time=mm:ss. Read the elixir number on the drop (bottom right) and the cost on each card.
+            In the "memo" field keep notes for yourself (max 200 chars): opponent cards seen so far, their last deploy and an elixir estimate, which lane is weak, whether you are ahead on towers.
+
+            ARENA. Two lanes (left, right), a river with two bridges in the middle, 3 towers each side (2 princess towers + the king tower behind them). You can deploy ONLY on your own half (below the river), plus behind a lane where an enemy princess tower is destroyed.
+            DEPLOY: SWIPE from the card in the bottom tray to the target spot (type swipe, ms 250). Keep the card swipe start exactly at the center of the card. Never target the bottom tray or the enemy half.
+            Placement spots: behind your princess tower line = safe defense; at the bridge on your side = fast attack; in the center of your half behind the king = anti-air or building pull; far back (just in front of the king tower) = slow push start.
+
+            ELIXIR DISCIPLINE (most important). Elixir regenerates 1 per 2.8 s (1 per 1.4 s in the last minute and overtime = double elixir, 1 per 0.9 s at triple).
+            - Opening: do NOT play anything for the first seconds. At about 7-8 elixir play one cheap defensive/cycle card in the back, then react to the opponent. Answer wait while elixir is low or while you have nothing useful.
+            - Never play a card you cannot afford (cost > elixir): answer wait.
+            - Never let elixir sit at 10 for long: wasted elixir is lost. At 9-10 start a push or play a value card.
+            - Positive trade = you spend less elixir than the opponent spent to answer you (for example 3-elixir Valkyrie kills a 5-elixir Witch). Seek them, avoid negative trades.
+
+            DEFENSE. React to what the opponent actually deploys (their elixir is spent, so you are now ahead): place the counter BEHIND the princess tower, a little to the side so the tower also shoots.
+            Tanks (Giant, Golem, Lava Hound, P.E.K.K.A, Mega Knight): kite with a cheap unit, then deal damage with high DPS (Inferno Tower/Dragon, Mini P.E.K.K.A, P.E.K.K.A, Barbarians).
+            Swarms (Skeleton Army, Goblin Gang, Barbarians, Minion Horde, Bats): Zap / Log / Arrows / Fireball, or Valkyrie / Wizard / Baby Dragon splash. Do not use a single-target unit.
+            Air (Balloon, Minions, Baby Dragon, Lava Hound, Inferno Dragon, Mega Minion): Musketeer, Archers, Minions, Wizard, Tesla, Inferno Tower, Mega Minion.
+            Hog Rider / Battle Ram / Ram Rider / Royal Hogs: Cannon, Tesla, Mini P.E.K.K.A, Skeletons/Ice Spirit to distract, Bomb Tower, Valkyrie (Hogs).
+            Ranged glass cannons (Princess, Dart Goblin, Musketeer, Archers, Wizard, Firecracker, Hunter): Zap, Log, Fireball, Arrows, or a fast unit (Hog, Prince, Ram) to run them down.
+            Miner / Goblin Barrel / Skeleton Barrel / Graveyard: keep a cheap spell or a cheap ground unit/ building ready (Log, Zap, Skeletons, Ice Spirit, Cannon in the middle).
+            Buildings (Cannon, Tesla, Bomb Tower, Inferno Tower): place in the middle of your half, 3-4 tiles in front of the king tower to pull and lock onto tanks and Hog Riders.
+            Spells: use only to kill 2+ units, to finish a tower, or to counter a push cheaply. A 4-elixir Fireball on a 3-elixir target is a bad trade.
+
+            OFFENSE. Push only on the lane where the opponent is weak and low on elixir (they just played something), usually after you win a defense: keep the surviving unit and add support behind it.
+            Tank in front + ranged/splash support behind (Giant + Wizard, Golem + Night Witch, Hog + Musketeer behind the bridge). Spell cycle (Log, Fireball) on towers when ahead.
+            Split pushes in double elixir: attack the weaker lane while defending the other. In overtime or sudden death, any tower destroyed wins: commit to the lane with the lowest tower health.
+            Protect your own king tower: do not leave a lane empty when the opponent has 8+ elixir.
+
+            CARD COSTS AND ROLES (trust the number printed on the card if it disagrees; cards change over time).
+            1: Skeletons, Ice Spirit, Fire Spirit. 2: Goblins, Spear Goblins, Bomber, Bats, Wall Breakers, Ice Golem, Barbarian Barrel, Log, Zap, Giant Snowball, Rage, Goblin Curse.
+            3: Knight, Archers, Minions, Skeleton Army, Guards, Princess, Dart Goblin, Mega Minion, Ice Wizard, Miner, Goblin Gang, Bandit, Royal Ghost, Fisherman, Firecracker, Cannon, Tombstone, Tornado, Arrows, Earthquake, Skeleton Barrel, Elixir Golem.
+            4: Valkyrie, Musketeer, Baby Dragon, Mini P.E.K.K.A, Hog Rider, Dark Prince, Battle Ram, Lumberjack, Inferno Dragon, Electro Wizard, Hunter, Night Witch, Zappies, Flying Machine, Magic Archer, Mighty Miner, Skeleton King, Golden Knight, Battle Healer, Tesla, Mortar, Bomb Tower, Furnace, Goblin Hut, Goblin Drill, Fireball, Poison, Freeze.
+            5: Giant, Balloon, Witch, Barbarians, Prince, Wizard, Minion Horde, Bowler, Executioner, Ram Rider, Rascals, Cannon Cart, Royal Hogs, Archer Queen, Monk, Electro Dragon, Inferno Tower, Graveyard.
+            6: Giant Skeleton, Royal Giant, Sparky, Elite Barbarians, Goblin Giant, X-Bow, Elixir Collector, Rocket, Lightning. 7: P.E.K.K.A, Lava Hound, Mega Knight, Royal Recruits, Barbarian Hut. 8: Golem. 9: Three Musketeers.
+            Win conditions: Hog Rider, Giant, Golem, Balloon, Royal Giant, Ram Rider, Miner, Graveyard, X-Bow, Mortar, Lava Hound, P.E.K.K.A, Mega Knight. Tanks and win conditions go FIRST in a push; support goes BEHIND.
+
+            MENUS (never spend money or gems). To start tap Battle (or Training Camp / Friendly battle if shown). After a match tap OK / Continue / Claim free reward. Ignore the shop, offers, pass royale, emote chat, deck change, chest unlock with gems. If a dialog asks for payment or login, answer wait.
+
+            MERGE TACTICS MODE: if the screen shows a hex-tile board, "Round / Battle Phase", Time left and 4 player portraits on top, it is an auto-battler. Cards in the tray cost elixir; deploy by swiping a card onto a free hex on YOUR side (bottom half); troops fight by themselves during the battle phase, so then answer wait.
+            Buy and place troops during the preparation phase while you have elixir; put tanks in the front row (closest to the enemy) and ranged troops in the back; three identical troops merge into a stronger one, so prefer the card you already own; keep a balanced team; do not leave elixir unused.
             """.trimIndent(), true
         ),
         GamePack(

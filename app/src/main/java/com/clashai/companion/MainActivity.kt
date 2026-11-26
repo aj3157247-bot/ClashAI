@@ -49,6 +49,7 @@ fun UniversalGameAI() {
     var showKey by remember { mutableStateOf(false) }
     var modeText by remember { mutableStateOf(AiSettings.mode) }
     var touchesOn by remember { mutableStateOf(AiSettings.showTouches) }
+    var realtimeOn by remember { mutableStateOf(AiSettings.realtime) }
     var gridOn by remember { mutableStateOf(AiSettings.gridOverlay) }
     var gapText by remember { mutableStateOf((AiSettings.requestGapMs / 1000L).toString()) }
     var crashText by remember { mutableStateOf(CrashLog.last(context)) }
@@ -125,46 +126,19 @@ fun UniversalGameAI() {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("صفحه‌ی AI Player (برای مجاز کردن تنظیمات محدود)") }
 
-                Text("مرحله ۳: نمایش روی سایر برنامه‌ها — ${if (overlayOn) "مجاز" else "غیرمجاز"}")
+                Text("مرحله ۳: پنل ربات (دکمه‌ی شروع/توقف و وضعیت زنده روی بازی؛ نیازی به مجوز نمایش روی برنامه‌ها نیست)")
                 Button(
                     onClick = {
-                        if (!Settings.canDrawOverlays(context)) {
-                            val uri = Uri.parse("package:${context.packageName}")
-                            context.startActivity(
-                                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, uri)
-                            )
-                        } else {
-                            status = "مجوز نمایش روی برنامه‌ها از قبل داده شده است"
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("اجازه‌ی نمایش روی برنامه‌ها") }
-                OutlinedButton(
-                    onClick = {
-                        val details = Intent(
-                            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                            Uri.parse("package:${context.packageName}")
-                        )
-                        context.startActivity(details)
-                        status = "در صفحه‌ی برنامه، «نمایش روی سایر برنامه‌ها» را روشن کن"
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("صفحه‌ی AI Player (اگر در لیست نبود)") }
-
-                Text("مرحله ۴: دکمه‌ی شناور")
-                Button(
-                    onClick = {
-                        if (!accessibilityOn) {
+                        val svc = AutoPlayAccessibilityService.instance
+                        if (svc == null) {
                             status = "ابتدا سرویس دسترسی را فعال کن"
-                        } else if (!overlayOn) {
-                            status = "ابتدا اجازه‌ی نمایش روی برنامه‌ها را بده"
                         } else {
-                            context.startService(Intent(context, FloatingControlService::class.java))
-                            status = "دکمه‌ی شناور نمایش داده شد. از روی بازی شروع کن."
+                            svc.showHud()
+                            status = "پنل ربات نمایش داده شد. بازی را باز کن و «شروع بازی» را بزن."
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("نمایش دکمه‌ی شناور") }
+                ) { Text("نمایش پنل ربات") }
 
                 HorizontalDivider()
                 Text("حالت بازی", style = MaterialTheme.typography.titleMedium)
@@ -190,7 +164,7 @@ fun UniversalGameAI() {
                         status = "حالت آفلاین: ربات محلی (لودو)"
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("آفلاین: ربات محلی (لودو)") }
+                ) { Text("آفلاین: ربات محلی (لودو و شطرنج، بدون اینترنت)") }
                 OutlinedButton(
                     onClick = {
                         AiSettings.mode = AiSettings.MODE_ONLINE
@@ -198,7 +172,7 @@ fun UniversalGameAI() {
                         status = if (AiSettings.apiKey.isBlank()) "حالت آنلاین: ابتدا کلید API را ذخیره کن" else "حالت آنلاین: هوش مصنوعی ابری"
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("آنلاین: فقط هوش مصنوعی ابری") }
+                ) { Text("آنلاین: هوش مصنوعی ابری (بازی‌های سخت‌تر)") }
 
                 OutlinedButton(
                     onClick = {
@@ -215,6 +189,14 @@ fun UniversalGameAI() {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("نمایش جای لمس ربات روی صفحه: " + if (touchesOn) "روشن" else "خاموش") }
+
+                OutlinedButton(
+                    onClick = {
+                        AiSettings.realtime = !AiSettings.realtime
+                        realtimeOn = AiSettings.realtime
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("حالت بلادرنگ ابری (ماشین‌سواری/اکشن کند، تک‌نفره): " + if (realtimeOn) "روشن" else "خاموش") }
 
                 HorizontalDivider()
                 Text("هوش مصنوعی ابری (برای بازی‌های دیگر)", style = MaterialTheme.typography.titleMedium)
@@ -270,7 +252,7 @@ fun UniversalGameAI() {
                 HorizontalDivider()
                 Text("وضعیت: $status")
                 Text("ربات: ${if (agentOn) "در حال اجرا" else "متوقف"}")
-                Text("ماژول‌ها: لودو (محلی، خطرسنج) همیشه؛ هوش مصنوعی ابری در حالت آنلاین و هوشمند")
+                Text("ماژول‌ها: لودو و شطرنج (محلی)؛ هوش مصنوعی ابری در حالت آنلاین و هوشمند")
 
                 OutlinedButton(
                     onClick = {

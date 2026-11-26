@@ -70,7 +70,7 @@ class GrokGameModule : GameModule {
         // 1) Play queued touches first, spaced out so the game can react between them.
         synchronized(this) {
             if (queue.isNotEmpty()) {
-                if (now - lastActionAt < ACTION_GAP_MS) return GameAction.Wait
+                if (now - lastActionAt < (if (AiSettings.realtime) 250L else ACTION_GAP_MS)) return GameAction.Wait
                 lastActionAt = now
                 return queue.removeFirst()
             }
@@ -78,14 +78,14 @@ class GrokGameModule : GameModule {
 
         // 2) Ask the AI again only when it makes sense.
         if (pending) return GameAction.Wait
-        if (now - lastActionAt < SETTLE_MS) return GameAction.Wait
-        if (now - lastRequestAt < AiSettings.requestGapMs) return GameAction.Wait
+        if (now - lastActionAt < (if (AiSettings.realtime) 200L else SETTLE_MS)) return GameAction.Wait
+        if (now - lastRequestAt < (if (AiSettings.realtime) 600L else AiSettings.requestGapMs)) return GameAction.Wait
 
         val sig = signature(frame)
         val previous = lastSignature
         val changed = previous == null || diff(previous, sig) > CHANGE_THRESHOLD
         val heartbeat = now - lastRequestAt > HEARTBEAT_MS
-        if (!changed && !heartbeat && !awaitingEffect) return GameAction.Wait
+        if (!changed && !heartbeat && !awaitingEffect && !AiSettings.realtime) return GameAction.Wait
 
         // Judge the effect of the last action.
         if (awaitingEffect) {
@@ -116,7 +116,7 @@ class GrokGameModule : GameModule {
         val ctx = AgentContext(gameId, ctxHistory, boardNote + hint, grid)
 
         // The frame is recycled by AgentLoop after this call, so render a copy for the worker.
-        val image = GridOverlay.render(frame, 1080, grid, board)
+        val image = GridOverlay.render(frame, if (AiSettings.realtime) 720 else 1080, grid, board)
         val sentW = image.width.toFloat()
         val sentH = image.height.toFloat()
         val frameW = frame.width.toFloat()
@@ -132,8 +132,9 @@ class GrokGameModule : GameModule {
                 AdviceLog.update(advice)
                 learnGame(advice)
 
-                var actions: List<GameAction> =
-                    advice.steps.mapNotNull { toAction(it, sentW, sentH, board, frameW, frameH) }
+                var actions: List<GameAction> = mergeGroups(
+                    advice.steps.mapNotNull { st -> toAction(st, sentW, sentH, board, frameW, frameH)?.let { a -> Pair(st.group, a) } }
+                )
                 if (!advice.myTurn) actions = emptyList()
 
                 waitStreak = if (actions.isEmpty()) waitStreak + 1 else 0
@@ -200,13 +201,29 @@ class GrokGameModule : GameModule {
         val p1 = snap(norm(s.x, imageW), norm(s.y, imageH))
         return when (s.type) {
             "tap" -> GameAction.Tap(p1[0], p1[1])
-            "hold" -> GameAction.Hold(p1[0], p1[1])
+            "hold" -> GameAction.Hold(p1[0], p1[1], if (s.ms > 0L) s.ms else 500L)
             "swipe" -> {
                 val p2 = snap(norm(s.x2, imageW), norm(s.y2, imageH))
-                GameAction.Swipe(p1[0], p1[1], p2[0], p2[1])
+                GameAction.Swipe(p1[0], p1[1], p2[0], p2[1], if (s.ms > 0L) s.ms else 300L)
             }
             else -> null
         }
+    }
+
+    /** Actions that share a group number (> 0) are played together as one multi-finger gesture. */
+    private fun mergeGroups(list: List<Pair<Int, GameAction>>): List<GameAction> {
+        val out = ArrayList<GameAction>()
+        val done = HashSet<Int>()
+        for (item in list) {
+            val g = item.first
+            if (g <= 0) {
+                out.add(item.second)
+            } else if (done.add(g)) {
+                val parts = list.filter { it.first == g }.map { it.second }
+                out.add(if (parts.size == 1) parts[0] else GameAction.Multi(parts))
+            }
+        }
+        return out
     }
 
     /** Detects an 8 x 8 board (chess, checkers...) so the grid can be drawn and touches snapped. */
@@ -227,6 +244,7 @@ class GrokGameModule : GameModule {
         is GameAction.Tap -> "لمس (%.2f, %.2f)".format(action.x, action.y)
         is GameAction.Hold -> "نگه‌داشتن (%.2f, %.2f)".format(action.x, action.y)
         is GameAction.Swipe -> "کشیدن (%.2f, %.2f) به (%.2f, %.2f)".format(action.x1, action.y1, action.x2, action.y2)
+        is GameAction.Multi -> action.parts.joinToString(" + ") { describe(it) }
         else -> "wait"
     }
 
@@ -234,6 +252,7 @@ class GrokGameModule : GameModule {
         is GameAction.Tap -> "tap(%.2f,%.2f)".format(action.x, action.y)
         is GameAction.Hold -> "hold(%.2f,%.2f)".format(action.x, action.y)
         is GameAction.Swipe -> "swipe(%.2f,%.2f->%.2f,%.2f)".format(action.x1, action.y1, action.x2, action.y2)
+        is GameAction.Multi -> action.parts.joinToString("+") { describeEn(it) }
         else -> "wait"
     }
 

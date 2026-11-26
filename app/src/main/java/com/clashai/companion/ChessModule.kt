@@ -52,6 +52,8 @@ class ChessModule : GameModule {
     private var threshold = 0
     private var mode = 0          // 0 = ignore strongly colored overlay pixels, 1 = count every pixel
     private var mismatch = 0
+    private var bootstrapped = false   // the position was read from the screen (not followed from the first move)
+    private var lastBootstrapAt = 0L
 
     // Our pending touches and retry state.
     private val taps = ArrayDeque<FloatArray>()
@@ -259,6 +261,189 @@ class ChessModule : GameModule {
         return colorDiff
     }
 
+    // ---------------------------------------------------------------- joining a running game
+
+    /** Silhouette features of every occupied square (index = screen row * 8 + col); null for empty squares. */
+    private fun squareFeatures(occ: BooleanArray): Array<FloatArray?> {
+        val out = arrayOfNulls<FloatArray>(64)
+        val px = cachedPx ?: return out
+        val g = geo ?: return out
+        val colors = PieceClassifier.squareColors(px, cachedW, cachedH, g)
+        for (i in 0..63) {
+            if (occ[i]) out[i] = PieceClassifier.features(px, cachedW, cachedH, g, i / 8, i % 8, colors)
+        }
+        return out
+    }
+
+    /** Splits the brightness of all pieces into a bright and a dark army. Returns the threshold, or null. */
+    private fun splitThreshold(obs: Obs): Int? {
+        var lo = 255
+        var hi = 0
+        var count = 0
+        for (i in 0..63) {
+            if (!obs.occ[i]) continue
+            count++
+            lo = min(lo, obs.feat[i])
+            hi = max(hi, obs.feat[i])
+        }
+        if (count < 2 || hi - lo < 40) return null
+        var t = (lo + hi) / 2
+        for (iter in 0 until 8) {
+            var sumHi = 0
+            var nHi = 0
+            var sumLo = 0
+            var nLo = 0
+            for (i in 0..63) {
+                if (!obs.occ[i]) continue
+                if (obs.feat[i] > t) {
+                    sumHi += obs.feat[i]
+                    nHi++
+                } else {
+                    sumLo += obs.feat[i]
+                    nLo++
+                }
+            }
+            if (nHi == 0 || nLo == 0) return null
+            t = (sumHi / nHi + sumLo / nLo) / 2
+        }
+        return t
+    }
+
+    /**
+     * Looks for the "last move" marks (warm yellow or orange squares). Returns 1 when a bright piece stands on
+     * one (the bright army moved last), 0 when a dark piece does, -1 when there is no clear mark.
+     */
+    private fun lastMoverBright(obs: Obs, t: Int, px: IntArray, g: BoardDetector.Geo): Int {
+        val colors = PieceClassifier.squareColors(px, cachedW, cachedH, g)
+        val c = IntArray(3)
+        var bright = 0
+        var dark = 0
+        for (i in 0..63) {
+            if (!obs.occ[i]) continue
+            BoardDetector.baseline(px, cachedW, cachedH, g, i / 8, i % 8, c)
+            val dl = abs(c[0] - colors[0]) + abs(c[1] - colors[1]) + abs(c[2] - colors[2])
+            val dd = abs(c[0] - colors[3]) + abs(c[1] - colors[4]) + abs(c[2] - colors[5])
+            if (min(dl, dd) < 90) continue
+            if (c[0] - c[2] < 50 || c[0] < c[1]) continue
+            if (obs.feat[i] > t) bright++ else dark++
+        }
+        return if (bright > 0 && dark == 0) 1 else if (dark > 0 && bright == 0) 0 else -1
+    }
+
+    /**
+     * Reads the complete position from the screen: color of every piece (bright or dark army) and its kind
+     * (PieceClassifier). Used when the game did not start from the beginning, and when the bot lost track.
+     * Castling rights are a guess (king and rook on their home squares); en passant is ignored.
+     * Returns true when a valid position was found and adopted.
+     */
+    private fun bootstrap(now: Long): Boolean {
+        if (now - lastBootstrapAt < BOOTSTRAP_GAP_MS) return false
+        lastBootstrapAt = now
+        val g = geo ?: return false
+        val px = cachedPx ?: return false
+        for (m in 0..1) {
+            val obs = obsFor(m)
+            val t = splitThreshold(obs) ?: continue
+            if (buildFromScreen(obs, t, m, px, g)) return true
+        }
+        return false
+    }
+
+    private fun buildFromScreen(obs: Obs, t: Int, m: Int, px: IntArray, g: BoardDetector.Geo): Boolean {
+        val feats = squareFeatures(obs.occ)
+        val kind = IntArray(64)
+        var brightKingRow = -1
+        var darkKingRow = -1
+        var brightTop = 0
+        var brightBottomCount = 0
+        for (i in 0..63) {
+            val f = feats[i] ?: continue
+            val bright = obs.feat[i] > t
+            val piece = PieceClassifier.classify(f, bright)
+            if (piece == 0) return false
+            kind[i] = piece
+            if (piece == Chess.K) brightKingRow = i / 8
+            if (piece == -Chess.K) darkKingRow = i / 8
+            if (bright) {
+                if (i / 8 <= 3) brightTop++ else brightBottomCount++
+            }
+        }
+        // Which army stands at the bottom of the screen? The kings tell it best; otherwise count the pieces.
+        val brightBottom = if (brightKingRow >= 0 && darkKingRow >= 0 && brightKingRow != darkKingRow)
+            brightKingRow > darkKingRow
+        else brightBottomCount >= brightTop
+        val flip = !brightBottom
+
+        val board = ByteArray(64)
+        for (i in 0..63) {
+            if (kind[i] == 0) continue
+            val row = i / 8
+            val col = i % 8
+            val file = if (flip) 7 - col else col
+            val rank = if (flip) row else 7 - row
+            board[rank * 8 + file] = kind[i].toByte()
+        }
+
+        // Sanity checks: one king each, pawns not on the back ranks, sensible piece counts.
+        var wk = 0
+        var bk = 0
+        var wp = 0
+        var bp = 0
+        var wn = 0
+        var bn = 0
+        for (s in 0..63) {
+            val v = board[s].toInt()
+            if (v == Chess.K) wk++
+            if (v == -Chess.K) bk++
+            if (v == Chess.P) {
+                wp++
+                if (s < 8 || s >= 56) return false
+            }
+            if (v == -Chess.P) {
+                bp++
+                if (s < 8 || s >= 56) return false
+            }
+            if (v > 0) wn++ else if (v < 0) bn++
+        }
+        if (wk != 1 || bk != 1 || wp > 8 || bp > 8 || wn > 16 || bn > 16) return false
+
+        var castle = 0
+        if (board[4].toInt() == Chess.K) {
+            if (board[7].toInt() == Chess.R) castle = castle or 1
+            if (board[0].toInt() == Chess.R) castle = castle or 2
+        }
+        if (board[60].toInt() == -Chess.K) {
+            if (board[63].toInt() == -Chess.R) castle = castle or 4
+            if (board[56].toInt() == -Chess.R) castle = castle or 8
+        }
+
+        // Whose turn is it? The "last move" marks show who moved last. Without marks, assume it is our turn.
+        val mover = lastMoverBright(obs, t, px, g)
+        var whiteToMove = when (mover) {
+            1 -> false
+            0 -> true
+            else -> brightBottom
+        }
+        // The side that just moved cannot be in check. If it is, the turn guess was wrong.
+        if (Chess.inCheck(board, !whiteToMove)) whiteToMove = !whiteToMove
+        if (Chess.inCheck(board, !whiteToMove)) return false
+
+        mode = m
+        threshold = t
+        weWhite = brightBottom
+        flipped = flip
+        pos = ChessPos(board, whiteToMove, castle, -1)
+        history.clear()
+        mismatch = 0
+        stuck = 0
+        lastPlanned = -1
+        bootstrapped = true
+        val side = if (weWhite) "سفید" else "سیاه"
+        val turn = if (whiteToMove == weWhite) "نوبت من است" else "نوبت حریف است"
+        AdviceLog.info("شطرنج: همه‌ی مهره‌ها از روی صفحه خوانده شد؛ من $side هستم و $turn")
+        return true
+    }
+
     // ---------------------------------------------------------------- following the game
 
     private fun dfs(p: ChessPos, observed: IntArray, total: Int, left: Int) {
@@ -335,20 +520,34 @@ class ChessModule : GameModule {
         val current = pos
         if (current == null || (start != null && !isStartPos(current))) {
             if (start == null) {
-                AdviceLog.info("شطرنج: صفحه پیدا شد ولی بازی از وضعیت شروع نیست. در خود بازی Restart بزن تا ربات مهره‌ها را بشناسد")
-                nextAt = now + 1500L
-                return GameAction.Wait
+                // The game is already running: read the whole position from the screen.
+                if (!bootstrap(now)) {
+                    AdviceLog.info("شطرنج: بازی در میانه است و همه‌ی مهره‌ها خوانده نشد. یک‌بار در خود بازی Restart بزن تا ربات شکل مهره‌ها را یاد بگیرد")
+                    nextAt = now + 1500L
+                    return GameAction.Wait
+                }
+            } else {
+                mode = start[0]
+                threshold = start[1]
+                weWhite = start[2] == 1
+                flipped = !weWhite
+                pos = Chess.startPos()
+                history.clear()
+                mismatch = 0
+                stuck = 0
+                lastPlanned = -1
+                bootstrapped = false
+                // Learn how this app draws its pieces, so the bot can also join a running game later.
+                val learnedNow = try {
+                    PieceClassifier.learnFromStart(squareFeatures(obsFor(mode).occ), weWhite, AiSettings.appContext)
+                } catch (t: Throwable) {
+                    false
+                }
+                AdviceLog.info(
+                    (if (weWhite) "شطرنج: بازی تازه، من سفید هستم" else "شطرنج: بازی تازه، من سیاه هستم") +
+                        (if (learnedNow) " (شکل مهره‌ها یاد گرفته شد)" else "")
+                )
             }
-            mode = start[0]
-            threshold = start[1]
-            weWhite = start[2] == 1
-            flipped = !weWhite
-            pos = Chess.startPos()
-            history.clear()
-            mismatch = 0
-            stuck = 0
-            lastPlanned = -1
-            AdviceLog.info(if (weWhite) "شطرنج: بازی تازه، من سفید هستم" else "شطرنج: بازی تازه، من سیاه هستم")
         }
         var p = pos ?: return GameAction.Wait
 
@@ -366,13 +565,19 @@ class ChessModule : GameModule {
                 lastPlanned = -1
             } else {
                 mismatch++
-                if (mismatch >= LOST_AFTER) {
-                    AdviceLog.info("شطرنج: وضعیت صفحه با بازی من نمی‌خواند؛ منتظر می‌مانم (با Restart در بازی دوباره شروع می‌شود)")
+                if (mismatch >= RESYNC_AFTER && bootstrap(now)) {
+                    // Lost track (a human moved, a dialog, an unknown reply...): the position was read again from the screen.
+                    p = pos ?: return GameAction.Wait
+                    mismatch = 0
                 } else {
-                    AdviceLog.info("شطرنج: صبر برای پایان انیمیشن...")
+                    if (mismatch >= LOST_AFTER) {
+                        AdviceLog.info("شطرنج: وضعیت صفحه با بازی من نمی‌خواند و خواندن مهره‌ها هم نشد؛ منتظر می‌مانم (با Restart در بازی دوباره شروع می‌شود)")
+                    } else {
+                        AdviceLog.info("شطرنج: صبر برای پایان انیمیشن...")
+                    }
+                    nextAt = now + (if (mismatch >= LOST_AFTER) 1500L else 500L)
+                    return GameAction.Wait
                 }
-                nextAt = now + (if (mismatch >= LOST_AFTER) 1500L else 500L)
-                return GameAction.Wait
             }
         } else if (found.plies > 0) {
             val sb = StringBuilder()
@@ -394,6 +599,15 @@ class ChessModule : GameModule {
         if (p.whiteToMove != weWhite) {
             nextAt = now + 600L
             return GameAction.Wait
+        }
+
+        // When the position was read from the screen, castling rights are only a guess. If the same move keeps
+        // failing, the game probably refuses it: forget the castling rights and choose another move.
+        if (bootstrapped && stuck >= 3 && p.castle != 0) {
+            p = ChessPos(p.sq, p.whiteToMove, 0, -1)
+            pos = p
+            stuck = 0
+            lastPlanned = -1
         }
 
         val move = Chess.bestMove(p, THINK_MS)
@@ -431,6 +645,8 @@ class ChessModule : GameModule {
         private const val SETTLE_MS = 2200L
         private const val THINK_MS = 2000L
         private const val LOST_AFTER = 14
+        private const val RESYNC_AFTER = 4
+        private const val BOOTSTRAP_GAP_MS = 1500L
         private const val MAX_PLIES = 3
         private const val SAT_LIMIT = 45
     }

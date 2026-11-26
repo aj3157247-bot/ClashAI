@@ -11,6 +11,7 @@ class App : Application() {
         super.onCreate()
         CrashLog.install(this)
         AiSettings.init(this)
+        PieceClassifier.load(this)
         GameRegistry.register(LudoModule())
         GameRegistry.register(ChessModule())
         GameRegistry.register(GrokGameModule())

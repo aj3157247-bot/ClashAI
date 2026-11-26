@@ -2,55 +2,24 @@ package com.aiplayer.companion
 
 import android.app.Service
 import android.content.Intent
-import android.graphics.PixelFormat
 import android.os.IBinder
-import android.view.Gravity
-import android.view.WindowManager
-import android.widget.Button
 
-/** Shows a floating Start/Stop button on top of other apps. */
+/**
+ * Kept for compatibility with the "show panel" button: it only asks the accessibility service to show the
+ * floating control panel (BotHud) and ends itself. The panel needs no "display over other apps" permission.
+ */
 class FloatingControlService : Service() {
-
-    private var windowManager: WindowManager? = null
-    private var button: Button? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-
-        val btn = Button(this).apply {
-            text = "شروع"
-            setOnClickListener {
-                if (AgentLoop.isRunning()) {
-                    AgentLoop.stop()
-                } else {
-                    AgentLoop.start()
-                }
-                text = if (AgentLoop.isRunning()) "توقف" else "شروع"
-            }
+        val svc = AutoPlayAccessibilityService.instance
+        if (svc != null) {
+            svc.showHud()
+        } else {
+            AdviceLog.error("سرویس دسترسی روشن نیست؛ پنل ربات نمایش داده نمی‌شود")
         }
-        button = btn
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = 16
-            y = 200
-        }
-        windowManager?.addView(btn, params)
-    }
-
-    override fun onDestroy() {
-        AgentLoop.stop()
-        button?.let { windowManager?.removeView(it) }
-        button = null
-        super.onDestroy()
+        stopSelf()
     }
 }

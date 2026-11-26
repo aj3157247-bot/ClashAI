@@ -17,10 +17,19 @@ object AiSettings {
     private const val KEY_TOUCHES = "show_touches"
     private const val KEY_GRID = "grid_overlay"
     private const val KEY_GAP = "request_gap_ms"
+    private const val KEY_HUD = "hud_visible"
+    private const val KEY_REALTIME = "realtime"
 
     const val MODE_OFFLINE = "offline"   // local bots only, no internet
     const val MODE_ONLINE = "online"     // cloud AI for other games
     const val MODE_AUTO = "auto"         // local bots first (fast, free), cloud AI for everything else
+
+    /** Short name of the current mode, shown on the floating panel. */
+    fun modeLabel(): String = when (mode) {
+        MODE_ONLINE -> "آنلاین"
+        MODE_AUTO -> "هوشمند"
+        else -> "آفلاین"
+    }
 
     /** True when the cloud AI may be used at all. */
     fun cloudAllowed(): Boolean = mode == MODE_ONLINE || mode == MODE_AUTO
@@ -69,6 +78,20 @@ object AiSettings {
         get() = prefs?.getLong(KEY_GAP, 3000L) ?: 3000L
         set(value) {
             prefs?.edit()?.putLong(KEY_GAP, value.coerceIn(1000L, 30000L))?.apply()
+        }
+
+    /** The floating control panel was visible; it is restored when the accessibility service restarts. */
+    var hudVisible: Boolean
+        get() = prefs?.getBoolean(KEY_HUD, false) ?: false
+        set(value) {
+            prefs?.edit()?.putBoolean(KEY_HUD, value)?.apply()
+        }
+
+    /** Fast cloud loop for real-time games (racing, action): smaller pictures, short pauses, timed holds. */
+    var realtime: Boolean
+        get() = prefs?.getBoolean(KEY_REALTIME, false) ?: false
+        set(value) {
+            prefs?.edit()?.putBoolean(KEY_REALTIME, value)?.apply()
         }
 
     var mode: String

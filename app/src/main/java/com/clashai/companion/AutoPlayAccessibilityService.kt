@@ -29,7 +29,28 @@ class AutoPlayAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        if (AiSettings.hudVisible) showHud()
     }
+
+    private var hud: BotHud? = null
+
+    /** Shows the floating control panel (Start / Stop and live status). */
+    fun showHud() {
+        mainHandler.post {
+            if (hud == null) hud = BotHud(this)
+            hud?.show()
+            AiSettings.hudVisible = true
+        }
+    }
+
+    fun hideHud() {
+        mainHandler.post {
+            hud?.hide()
+            AiSettings.hudVisible = false
+        }
+    }
+
+    fun isHudShown(): Boolean = hud?.isShown() == true
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
@@ -37,6 +58,11 @@ class AutoPlayAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        try {
+            hud?.hide()
+        } catch (e: Exception) {
+            // ignore
+        }
         super.onDestroy()
     }
 
@@ -104,54 +130,96 @@ class AutoPlayAccessibilityService : AccessibilityService() {
         return floatArrayOf(m.widthPixels.toFloat(), m.heightPixels.toFloat())
     }
 
-    fun perform(action: GameAction) {
-        val size = displaySize()
-        val w = size[0]
-        val h = size[1]
-
-        val path = Path()
-        val points: FloatArray
-        val stroke = when (action) {
+    /** Turns an action into finger strokes (and the markers that show them). Multi = several fingers at once. */
+    private fun collect(
+        action: GameAction, w: Float, h: Float,
+        strokes: MutableList<GestureDescription.StrokeDescription>,
+        markers: MutableList<MarkerItem>
+    ) {
+        if (strokes.size >= GestureDescription.getMaxStrokeCount()) return
+        fun px(v: Float): Float = (v * w).coerceIn(1f, w - 2f)
+        fun py(v: Float): Float = (v * h).coerceIn(1f, h - 2f)
+        when (action) {
             is GameAction.Tap -> {
-                points = floatArrayOf(action.x * w, action.y * h)
-                path.moveTo(points[0], points[1])
-                GestureDescription.StrokeDescription(path, 0L, 90L)
+                val x = px(action.x)
+                val y = py(action.y)
+                val path = Path()
+                path.moveTo(x, y)
+                strokes.add(GestureDescription.StrokeDescription(path, 0L, 90L))
+                markers.add(MarkerItem(0, x, y, x, y, 90L))
             }
             is GameAction.Hold -> {
-                points = floatArrayOf(action.x * w, action.y * h)
-                path.moveTo(points[0], points[1])
-                GestureDescription.StrokeDescription(path, 0L, action.durationMs)
+                val x = px(action.x)
+                val y = py(action.y)
+                val ms = action.durationMs.coerceIn(60L, 8000L)
+                val path = Path()
+                path.moveTo(x, y)
+                strokes.add(GestureDescription.StrokeDescription(path, 0L, ms))
+                markers.add(MarkerItem(1, x, y, x, y, ms))
             }
             is GameAction.Swipe -> {
-                points = floatArrayOf(action.x1 * w, action.y1 * h, action.x2 * w, action.y2 * h)
-                path.moveTo(points[0], points[1])
-                path.lineTo(points[2], points[3])
-                GestureDescription.StrokeDescription(path, 0L, action.durationMs)
+                val x1 = px(action.x1)
+                val y1 = py(action.y1)
+                val x2 = px(action.x2)
+                val y2 = py(action.y2)
+                val ms = action.durationMs.coerceIn(60L, 8000L)
+                val path = Path()
+                path.moveTo(x1, y1)
+                if (Math.abs(x2 - x1) + Math.abs(y2 - y1) >= 2f) path.lineTo(x2, y2)
+                strokes.add(GestureDescription.StrokeDescription(path, 0L, ms))
+                markers.add(MarkerItem(2, x1, y1, x2, y2, ms))
             }
-            GameAction.Wait -> return
+            is GameAction.Multi -> {
+                for (part in action.parts) collect(part, w, h, strokes, markers)
+            }
+            GameAction.Wait -> {
+            }
         }
-
-        val accepted = dispatchGesture(
-            GestureDescription.Builder().addStroke(stroke).build(),
-            object : AccessibilityService.GestureResultCallback() {
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    AdviceLog.error("سیستم لمس را لغو کرد")
-                }
-            },
-            null
-        )
-        if (!accepted) {
-            AdviceLog.error("سیستم لمس را نپذیرفت (canPerformGestures را بررسی کن)")
-        }
-        showMarker(points)
     }
 
-    private fun showMarker(points: FloatArray) {
-        if (!AiSettings.showTouches) return
+    fun perform(action: GameAction) {
+        if (action === GameAction.Wait) return
+        val size = displaySize()
+        val strokes = ArrayList<GestureDescription.StrokeDescription>()
+        val markers = ArrayList<MarkerItem>()
+        collect(action, size[0], size[1], strokes, markers)
+        if (strokes.isEmpty()) return
+
+        val builder = GestureDescription.Builder()
+        for (st in strokes) builder.addStroke(st)
+        val accepted = try {
+            dispatchGesture(
+                builder.build(),
+                object : AccessibilityService.GestureResultCallback() {
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        AdviceLog.error("سیستم لمس را لغو کرد")
+                    }
+                },
+                null
+            )
+        } catch (e: Exception) {
+            AdviceLog.error("لمس اجرا نشد: ${e.message}")
+            false
+        }
+        if (!accepted) {
+            AdviceLog.error("سیستم لمس را نپذیرفت (سرویس دسترسی را خاموش و روشن کن)")
+        }
+        showMarkers(markers)
+    }
+
+    /** Time until the last marker disappears (uptime ms). The agent does not take a screenshot before that. */
+    @Volatile var markerUntil = 0L
+        private set
+
+    private fun showMarkers(markers: List<MarkerItem>) {
+        if (!AiSettings.showTouches || markers.isEmpty()) return
+        var life = MARKER_MS
+        for (m in markers) life = Math.max(life, m.durationMs + 350L)
+        markerUntil = android.os.SystemClock.uptimeMillis() + life
         mainHandler.post {
             try {
                 val wm = getSystemService(WINDOW_SERVICE) as WindowManager
-                val view = TouchMarkerView(this, points)
+                val view = TouchMarkerView(this, markers, life)
                 val lp = WindowManager.LayoutParams(
                     WindowManager.LayoutParams.MATCH_PARENT,
                     WindowManager.LayoutParams.MATCH_PARENT,
@@ -170,7 +238,7 @@ class AutoPlayAccessibilityService : AccessibilityService() {
                     } catch (e: Exception) {
                         // already removed
                     }
-                }, MARKER_MS)
+                }, life)
             } catch (e: Exception) {
                 AdviceLog.error("نمایش نشانگر لمس ممکن نشد: ${e.message}")
             }
@@ -178,7 +246,7 @@ class AutoPlayAccessibilityService : AccessibilityService() {
     }
 
     companion object {
-        private const val MARKER_MS = 900L
+        private const val MARKER_MS = 1300L
 
         @Volatile
         var instance: AutoPlayAccessibilityService? = null

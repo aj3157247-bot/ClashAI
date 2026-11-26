@@ -19,7 +19,13 @@ class AgentContext(
 )
 
 /** One touch the AI wants to make. Coordinates are 0..1 (or pixels; the module normalizes). */
-data class Step(val type: String, val x: Float, val y: Float, val x2: Float, val y2: Float)
+data class Step(
+    val type: String, val x: Float, val y: Float, val x2: Float, val y2: Float,
+    /** Duration for hold and swipe, in ms (0 = default). */
+    val ms: Long = 0L,
+    /** Steps with the same group number (> 0) are touched at the same time with different fingers. */
+    val group: Int = 0
+)
 
 data class Advice(
     val game: String,
@@ -69,7 +75,9 @@ data class Advice(
                 x = x.toFloat(),
                 y = y.toFloat(),
                 x2 = o.optDouble("x2", x).toFloat(),
-                y2 = o.optDouble("y2", y).toFloat()
+                y2 = o.optDouble("y2", y).toFloat(),
+                ms = o.optLong("ms", 0L),
+                group = o.optInt("group", 0)
             )
         }
     }
@@ -102,7 +110,12 @@ If the last action had NO visible effect (see the history), do not repeat the sa
 Respond with ONLY one JSON object, no markdown, no extra text:
 {"game":"short game name","game_id":"one of: %IDS%","screen":"short state description incl. dice=N when a die is shown","my_turn":true,"confidence":0.0,"actions":[{"type":"tap|swipe|hold|wait","x":0.0,"y":0.0,"x2":0.0,"y2":0.0}],"reason":"one short sentence in Persian (Farsi)"}
 For tap and hold use x and y only. For swipe also set x2 and y2. For wait the coordinates are ignored.
+Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and "group" = a number; actions with the same group number are touched at the same time with different fingers (for example hold the gas and steer).
 """
+
+    private const val REALTIME_NOTE = "\nREAL-TIME MODE: this is a fast game (racing, runner, action) and you are asked again every 1-3 seconds. " +
+        "Answer with the control for the NEXT 1-2 seconds only: use hold with ms (500-2000) on the gas or move control, and use group to press two controls together " +
+        "(group 1 for both). Never answer wait while the game is running; only wait on menus you cannot pass. Keep the reason very short.\n"
 
     private fun buildPrompt(ctx: AgentContext): String {
         val pack = GameKnowledge.byId(ctx.gameId)
@@ -114,6 +127,7 @@ For tap and hold use x and y only. For swipe also set x2 and y2. For wait the co
             "The magenta grid and the small numbers on the edges were drawn by the controller. They are exact coordinates, not part of the game. Use them to place your touch precisely."
         else ""
         var p = BASE
+        if (AiSettings.realtime) p += REALTIME_NOTE
             .replace("%GRID%", gridText)
             .replace("%GAME%", gameText)
             .replace("%HISTORY%", historyText)
@@ -141,7 +155,7 @@ For tap and hold use x and y only. For swipe also set x2 and y2. For wait the co
 
     private fun request(apiKey: String, endpoint: String, model: String, frame: Bitmap, ctx: AgentContext): Advice {
         val jpeg = ByteArrayOutputStream().use { out ->
-            frame.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            frame.compress(Bitmap.CompressFormat.JPEG, if (AiSettings.realtime) 60 else 85, out)
             out.toByteArray()
         }
         val b64 = Base64.encodeToString(jpeg, Base64.NO_WRAP)
@@ -156,7 +170,7 @@ For tap and hold use x and y only. For swipe also set x2 and y2. For wait the co
         val body = JSONObject()
             .put("model", model)
             .put("temperature", 0.15)
-            .put("max_tokens", 1400)
+            .put("max_tokens", if (AiSettings.realtime) 500 else 1400)
             .put("messages", JSONArray().put(message))
 
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {

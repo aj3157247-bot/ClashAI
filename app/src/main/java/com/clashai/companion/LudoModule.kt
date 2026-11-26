@@ -291,7 +291,10 @@ class LudoModule : GameModule {
         val s = img.w / 1080f
         val top = (g.bottom + 8f * s).toInt()
         val bottom = min(img.h, (img.h * 0.97f).toInt())
-        val xMax = img.w / 2
+        // In the 4-player layout your pink panel is at 22%..36% of the screen width. In the 2-player layout the
+        // pink die box is centered and starts at about 41%. Looking only at the left 39% therefore tells the two
+        // layouts apart (before, half of the centered box was taken for a 4-player panel and the bot never rolled).
+        val xMax = (img.w * 0.39f).toInt()
         var minX = Int.MAX_VALUE
         var maxX = -1
         var minY = Int.MAX_VALUE

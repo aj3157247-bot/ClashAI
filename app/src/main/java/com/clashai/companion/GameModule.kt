@@ -11,6 +11,8 @@ sealed class GameAction {
         val x2: Float, val y2: Float,
         val durationMs: Long = 300L
     ) : GameAction()
+    /** Several touches at the same moment (for example: hold the gas button and steer with the other thumb). */
+    data class Multi(val parts: List<GameAction>) : GameAction()
     object Wait : GameAction()
 }
 

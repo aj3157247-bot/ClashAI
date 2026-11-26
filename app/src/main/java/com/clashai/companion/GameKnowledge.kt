@@ -138,6 +138,6 @@ object GameKnowledge {
     const val GENERIC_RULES = """
 GENERIC GAME. Work out the objective from the screen. In menus tap Play / Start / Continue / Next / Claim (free rewards only).
 In tutorials follow the highlighted hint. Close ordinary dialogs with their X or Close button. Make the move that progresses the objective the most under the game's rules.
-Real-time action games (racing, runners, shooters) are too fast for this controller: if the game needs reflexes, answer wait.
+Real-time action games (racing, runners, shooters) need REAL-TIME MODE (a setting). If the prompt does not say REAL-TIME MODE and the game needs reflexes, answer wait. In REAL-TIME MODE keep the car or character safe: stay on the road or path, avoid obstacles and enemies' fire, collect rewards, and use the visible controls (hold the gas, steer left or right, jump, fire).
 """
 }

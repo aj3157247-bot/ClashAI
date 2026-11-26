@@ -14,6 +14,8 @@ object GameRegistry {
         }
     }
 
+    fun byId(id: String): GameModule? = modules.firstOrNull { it.id == id }
+
     fun find(packageName: String?, frame: Bitmap): GameModule? =
         modules.firstOrNull { it.matches(packageName, frame) }
 }

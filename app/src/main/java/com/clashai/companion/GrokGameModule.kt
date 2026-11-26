@@ -26,6 +26,8 @@ class GrokGameModule : GameModule {
 
     // Guarded by `this`.
     private val queue = ArrayDeque<GameAction>()
+    private val dueOffsets = ArrayDeque<Long>()
+    @Volatile private var planStart = 0L
     private val history = ArrayList<String>()
 
     @Volatile private var gameId: String? = null
@@ -55,6 +57,7 @@ class GrokGameModule : GameModule {
         currentPackage = packageName
         synchronized(this) {
             queue.clear()
+            dueOffsets.clear()
             history.clear()
         }
         val pack = GameKnowledge.identify(packageName)
@@ -73,8 +76,13 @@ class GrokGameModule : GameModule {
         // 1) Play queued touches first, spaced out so the game can react between them.
         synchronized(this) {
             if (queue.isNotEmpty()) {
-                if (now - lastActionAt < (if (AiSettings.realtime) 250L else ACTION_GAP_MS)) return GameAction.Wait
+                val offset = if (dueOffsets.isNotEmpty()) dueOffsets.first() else 0L
+                if (offset > 0L) {
+                    // A timed plan: play every touch at its own moment.
+                    if (now < planStart + offset) return GameAction.Wait
+                } else if (now - lastActionAt < (if (AiSettings.realtime) 250L else ACTION_GAP_MS)) return GameAction.Wait
                 lastActionAt = now
+                if (dueOffsets.isNotEmpty()) dueOffsets.removeFirst()
                 return queue.removeFirst()
             }
         }
@@ -131,13 +139,22 @@ class GrokGameModule : GameModule {
         AdviceLog.info("در حال ارسال تصویر بازی به هوش مصنوعی...")
         worker.execute {
             try {
-                val advice = GrokClient.askForAction(key, endpoint, model, image, ctx)
+                val advice = try {
+                    GrokClient.askForAction(key, endpoint, model, image, ctx)
+                } catch (first: Exception) {
+                    // The first AI failed or is rate limited: let the backup AI answer, if there is one.
+                    if (!AiSettings.hasBackup()) throw first
+                    AdviceLog.info("هوش مصنوعی اول جواب نداد؛ هوش مصنوعی دوم تصمیم می‌گیرد")
+                    GrokClient.askForAction(AiSettings.backupKey, AiSettings.backupEndpoint, AiSettings.backupModel, image, ctx)
+                }
                 AdviceLog.update(advice)
                 learnGame(advice)
 
-                var actions: List<GameAction> = mergeGroups(
-                    advice.steps.mapNotNull { st -> toAction(st, sentW, sentH, board, frameW, frameH)?.let { a -> Pair(st.group, a) } }
+                val planned = mergeGroups(
+                    advice.steps.mapNotNull { st -> toAction(st, sentW, sentH, board, frameW, frameH)?.let { a -> Triple(st.group, st.at, a) } }
                 )
+                var actions: List<GameAction> = planned.map { it.second }
+                val offsets: List<Long> = planned.map { it.first }
                 if (!advice.myTurn) actions = emptyList()
 
                 adaptiveGapMs = adaptiveGapMs * 9L / 10L
@@ -154,7 +171,10 @@ class GrokGameModule : GameModule {
                     if (actions.isNotEmpty() || !lastIsWait) history.add(entry.take(160))
                     while (history.size > HISTORY_MAX) history.removeAt(0)
                     queue.clear()
+                    dueOffsets.clear()
                     queue.addAll(actions)
+                    if (actions.isNotEmpty()) dueOffsets.addAll(offsets)
+                    planStart = System.currentTimeMillis()
                 }
                 if (actions.isNotEmpty()) {
                     actionSignature = sig
@@ -217,16 +237,16 @@ class GrokGameModule : GameModule {
     }
 
     /** Actions that share a group number (> 0) are played together as one multi-finger gesture. */
-    private fun mergeGroups(list: List<Pair<Int, GameAction>>): List<GameAction> {
-        val out = ArrayList<GameAction>()
+    private fun mergeGroups(list: List<Triple<Int, Long, GameAction>>): List<Pair<Long, GameAction>> {
+        val out = ArrayList<Pair<Long, GameAction>>()
         val done = HashSet<Int>()
         for (item in list) {
             val g = item.first
             if (g <= 0) {
-                out.add(item.second)
+                out.add(Pair(item.second, item.third))
             } else if (done.add(g)) {
-                val parts = list.filter { it.first == g }.map { it.second }
-                out.add(if (parts.size == 1) parts[0] else GameAction.Multi(parts))
+                val parts = list.filter { it.first == g }.map { it.third }
+                out.add(Pair(item.second, if (parts.size == 1) parts[0] else GameAction.Multi(parts)))
             }
         }
         return out

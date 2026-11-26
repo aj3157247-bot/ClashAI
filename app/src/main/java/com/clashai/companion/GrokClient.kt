@@ -24,7 +24,9 @@ data class Step(
     /** Duration for hold and swipe, in ms (0 = default). */
     val ms: Long = 0L,
     /** Steps with the same group number (> 0) are touched at the same time with different fingers. */
-    val group: Int = 0
+    val group: Int = 0,
+    /** Start time of this step, in ms after the first one (a timed plan). */
+    val at: Long = 0L
 )
 
 data class Advice(
@@ -77,7 +79,8 @@ data class Advice(
                 x2 = o.optDouble("x2", x).toFloat(),
                 y2 = o.optDouble("y2", y).toFloat(),
                 ms = o.optLong("ms", 0L),
-                group = o.optInt("group", 0)
+                group = o.optInt("group", 0),
+                at = o.optLong("at", 0L)
             )
         }
     }
@@ -114,7 +117,7 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
 """
 
     private const val REALTIME_NOTE = "\nREAL-TIME MODE: this is a fast game (racing, runner, action) and you are asked again every 1-3 seconds. " +
-        "Answer with the control for the NEXT 1-2 seconds only: use hold with ms (500-2000) on the gas or move control, and use group to press two controls together " +
+        "Answer with a short TIMED PLAN for the next 3-5 seconds: up to 8 actions, each with \"at\" = its start time in ms after the first action (0-5000) and \"ms\" for holds; the phone plays the whole plan by itself without asking you again. Use hold with ms on the gas or move control, and use group to press two controls together " +
         "(group 1 for both). Never answer wait while the game is running; only wait on menus you cannot pass. Keep the reason very short.\n"
 
     private fun buildPrompt(ctx: AgentContext): String {

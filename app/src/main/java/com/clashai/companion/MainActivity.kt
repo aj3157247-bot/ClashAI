@@ -45,6 +45,9 @@ fun UniversalGameAI() {
     var adviceText by remember { mutableStateOf(AdviceLog.lastText) }
     var keyText by remember { mutableStateOf(AiSettings.apiKey) }
     var modelText by remember { mutableStateOf(AiSettings.model) }
+    var bKeyText by remember { mutableStateOf(AiSettings.backupKey) }
+    var bEndpointText by remember { mutableStateOf(AiSettings.backupEndpoint) }
+    var bModelText by remember { mutableStateOf(AiSettings.backupModel) }
     var endpointText by remember { mutableStateOf(AiSettings.endpoint) }
     var showKey by remember { mutableStateOf(false) }
     var modeText by remember { mutableStateOf(AiSettings.mode) }
@@ -247,6 +250,38 @@ fun UniversalGameAI() {
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("ذخیره‌ی تنظیمات Grok") }
+                Text("هوش مصنوعی دوم (اختیاری): اگر اولی خطا داد یا محدود شد، این جایگزین می‌شود. هر API سازگار با OpenAI که تصویر می‌فهمد.")
+                OutlinedTextField(
+                    value = bKeyText,
+                    onValueChange = { bKeyText = it },
+                    label = { Text("کلید API دوم") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = bEndpointText,
+                    onValueChange = { bEndpointText = it },
+                    label = { Text("آدرس API دوم (…/chat/completions)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = bModelText,
+                    onValueChange = { bModelText = it },
+                    label = { Text("نام مدل دوم") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Button(
+                    onClick = {
+                        AiSettings.backupKey = bKeyText
+                        AiSettings.backupEndpoint = bEndpointText
+                        AiSettings.backupModel = bModelText
+                        status = if (AiSettings.hasBackup()) "هوش مصنوعی دوم ذخیره شد" else "هوش مصنوعی دوم ناقص است (کلید، آدرس و مدل هر سه لازم است)"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("ذخیره‌ی هوش مصنوعی دوم") }
                 Text("تصمیم هوش مصنوعی: $adviceText")
 
                 HorizontalDivider()

@@ -18,6 +18,9 @@ object AiSettings {
     private const val KEY_GRID = "grid_overlay"
     private const val KEY_GAP = "request_gap_ms"
     private const val KEY_HUD = "hud_visible"
+    private const val KEY_B_KEY = "backup_key"
+    private const val KEY_B_ENDPOINT = "backup_endpoint"
+    private const val KEY_B_MODEL = "backup_model"
     private const val KEY_REALTIME = "realtime"
 
     const val MODE_OFFLINE = "offline"   // local bots only, no internet
@@ -93,6 +96,24 @@ object AiSettings {
         set(value) {
             prefs?.edit()?.putBoolean(KEY_REALTIME, value)?.apply()
         }
+
+    /** A second AI (any OpenAI-compatible vision API: OpenAI, Gemini, OpenRouter, Groq...). Used when the first fails or is rate limited. */
+    var backupKey: String
+        get() = prefs?.getString(KEY_B_KEY, "") ?: ""
+        set(value) {
+            prefs?.edit()?.putString(KEY_B_KEY, value.trim())?.apply()
+        }
+    var backupEndpoint: String
+        get() = prefs?.getString(KEY_B_ENDPOINT, "") ?: ""
+        set(value) {
+            prefs?.edit()?.putString(KEY_B_ENDPOINT, value.trim())?.apply()
+        }
+    var backupModel: String
+        get() = prefs?.getString(KEY_B_MODEL, "") ?: ""
+        set(value) {
+            prefs?.edit()?.putString(KEY_B_MODEL, value.trim())?.apply()
+        }
+    fun hasBackup(): Boolean = backupKey.isNotBlank() && backupEndpoint.isNotBlank() && backupModel.isNotBlank()
 
     var mode: String
         get() = prefs?.getString(KEY_MODE, MODE_OFFLINE) ?: MODE_OFFLINE

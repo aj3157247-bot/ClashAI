@@ -173,6 +173,12 @@ class BotHud(private val service: AutoPlayAccessibilityService) {
         handler.postDelayed(ticker, REFRESH_MS)
     }
 
+    /** The panel must not appear in the screenshot sent to the AI (it covers part of the game and confuses the AI). */
+    fun setInvisible(invisible: Boolean) {
+        val r = root ?: return
+        r.visibility = if (invisible) View.INVISIBLE else View.VISIBLE
+    }
+
     fun hide() {
         handler.removeCallbacks(ticker)
         val r = root
@@ -195,7 +201,7 @@ class BotHud(private val service: AutoPlayAccessibilityService) {
         val running = AgentLoop.isRunning()
         dot?.background = round(if (running) Color.rgb(0, 220, 90) else Color.rgb(240, 60, 60), Color.WHITE, 8, 0)
         title?.text = "AI Player · " + AiSettings.modeLabel()
-        status?.text = AdviceLog.lastText.take(170)
+        status?.text = AdviceLog.lastText.take(280)
         val b = toggle
         if (b != null) {
             b.text = if (running) "توقف ربات" else "شروع بازی"

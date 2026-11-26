@@ -139,22 +139,35 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
         return p
     }
 
-    fun askForAction(apiKey: String, endpoint: String, model: String, frame: Bitmap, ctx: AgentContext): Advice {
+    /** Compresses the frame once; the result can be shared by several requests (the bitmap may be recycled afterwards). */
+    fun encodeFrame(frame: Bitmap): String {
+        val jpeg = ByteArrayOutputStream().use { out ->
+            frame.compress(Bitmap.CompressFormat.JPEG, if (AiSettings.realtime) 60 else 85, out)
+            out.toByteArray()
+        }
+        return Base64.encodeToString(jpeg, Base64.NO_WRAP)
+    }
+
+    fun askForAction(apiKey: String, endpoint: String, model: String, b64: String, ctx: AgentContext): Advice {
         var lastError: Exception? = null
-        for (attempt in 0..1) {
+        val tries = if (AiSettings.realtime) 1 else 2
+        for (attempt in 0 until tries) {
             try {
-                return request(apiKey, endpoint, model, frame, ctx)
+                return request(apiKey, endpoint, model, b64, ctx, true)
             } catch (e: RateLimitException) {
                 throw e
             } catch (e: TransientHttpException) {
                 lastError = e
-                Thread.sleep(1500L)
+                if (attempt + 1 < tries) Thread.sleep(1200L)
             }
         }
         throw lastError ?: IllegalStateException("خطای نامشخص")
     }
 
-    private class TransientHttpException(msg: String) : Exception(msg)
+    class TransientHttpException(msg: String) : Exception(msg)
+
+    /** A mistake that retrying cannot fix (wrong key, wrong address, wrong model). The router pauses that AI for a while. */
+    class FatalApiException(msg: String) : Exception(msg)
 
     /** Fixes common typing mistakes in the API address (for example "vl" instead of "v1", or a missing /chat/completions). */
     fun normalizeEndpoint(raw: String): String {
@@ -172,14 +185,8 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
         return e
     }
 
-    private fun request(apiKey: String, endpointRaw: String, model: String, frame: Bitmap, ctx: AgentContext): Advice {
+    private fun request(apiKey: String, endpointRaw: String, model: String, b64: String, ctx: AgentContext, reasoningOff: Boolean): Advice {
         val endpoint = normalizeEndpoint(endpointRaw)
-        val jpeg = ByteArrayOutputStream().use { out ->
-            frame.compress(Bitmap.CompressFormat.JPEG, if (AiSettings.realtime) 60 else 85, out)
-            out.toByteArray()
-        }
-        val b64 = Base64.encodeToString(jpeg, Base64.NO_WRAP)
-
         val imagePart = JSONObject()
             .put("type", "image_url")
             .put("image_url", JSONObject().put("url", "data:image/jpeg;base64,$b64"))
@@ -190,8 +197,19 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
         val body = JSONObject()
             .put("model", model.trim())
             .put("temperature", 0.15)
-            .put("max_tokens", if (AiSettings.realtime) 500 else 1400)
+            .put("max_tokens", if (AiSettings.realtime) 900 else 2000)
             .put("messages", JSONArray().put(message))
+        // Both default models can "think" first, and the thinking uses up the token budget so the JSON answer never arrives.
+        // Switch thinking off where the provider supports it; on HTTP 400 the request is repeated without these extras.
+        val host = endpoint.lowercase()
+        var extrasSent = false
+        if (reasoningOff) {
+            if (host.contains("openrouter.ai")) {
+                body.put("reasoning", JSONObject().put("enabled", false)); extrasSent = true
+            } else if (host.contains("groq.com")) {
+                body.put("reasoning_effort", "none"); extrasSent = true
+            }
+        }
 
         val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -214,14 +232,16 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
                 throw RateLimitException(conn.getHeaderField("retry-after")?.toLongOrNull() ?: 20L)
             }
             if (code >= 500) throw TransientHttpException("HTTP $code")
-            if (code == 401 || code == 403) throw IllegalStateException("کلید API پذیرفته نشد (HTTP $code). کلید را دوباره بررسی کن")
-            if (code == 404) throw IllegalStateException("آدرس یا نام مدل پیدا نشد (HTTP 404). آدرس: $endpoint | مدل: $model")
-            if (code !in 200..299) throw IllegalStateException("HTTP $code: ${apiError(text) ?: text.take(200)}")
+            if (code == 401 || code == 403) throw FatalApiException("کلید API پذیرفته نشد (HTTP $code)")
+            if (code == 404) throw FatalApiException("آدرس یا نام مدل پیدا نشد (404): $model")
+            if (code == 400 && extrasSent) return request(apiKey, endpointRaw, model, b64, ctx, false)
+            if (code == 408) throw TransientHttpException("HTTP 408")
+            if (code !in 200..299) throw FatalApiException("HTTP $code: ${apiError(text) ?: text.take(160)}")
 
             val trimmed = text.trimStart()
             if (!trimmed.startsWith("{")) {
                 // An HTML page came back: the address is not an API address.
-                throw IllegalStateException("آدرس API اشتباه است؛ به‌جای JSON یک صفحه‌ی وب برگشت. آدرس درست OpenRouter: https://openrouter.ai/api/v1/chat/completions (آدرس فعلی: $endpoint)")
+                throw FatalApiException("آدرس API اشتباه است (صفحه‌ی وب برگشت): $endpoint")
             }
             val json = JSONObject(trimmed)
             // Some providers answer 200 with an error object (OpenRouter does this for free models that are busy).
@@ -229,14 +249,17 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
                 val c = err.optInt("code", 0)
                 if (c == 429) throw RateLimitException(20L)
                 if (c in 500..599) throw TransientHttpException("خطای سرور ($c)")
-                throw IllegalStateException(err.optString("message", "خطای نامشخص API"))
+                throw FatalApiException(err.optString("message", "خطای نامشخص API").take(160))
             }
             val choices = json.optJSONArray("choices")
             if (choices == null || choices.length() == 0) throw TransientHttpException("پاسخ خالی از API")
             val msg = choices.getJSONObject(0).optJSONObject("message")
                 ?: throw TransientHttpException("پیام خالی از API")
             val content = extractContent(msg)
-            if (content.isBlank()) throw TransientHttpException("متن پاسخ خالی بود (مدل تصویر را نپذیرفته یا فکر کرده و جواب نداده)")
+            if (content.isBlank()) {
+                val fin = choices.getJSONObject(0).optString("finish_reason", "")
+                throw TransientHttpException("پاسخ خالی بود" + (if (fin.isNotBlank()) " (finish=$fin)" else ""))
+            }
             return try { Advice.parse(content) } catch (e: org.json.JSONException) {
                 throw TransientHttpException("JSON پاسخ نامعتبر بود")
             } catch (e: IllegalStateException) {

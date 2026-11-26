@@ -79,41 +79,52 @@ class AutoPlayAccessibilityService : AccessibilityService() {
             onResult(null)
             return
         }
-        try {
-            takeScreenshot(
-                Display.DEFAULT_DISPLAY,
-                mainExecutor,
-                object : AccessibilityService.TakeScreenshotCallback {
-                    override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
-                        val hardware = Bitmap.wrapHardwareBuffer(
-                            screenshot.hardwareBuffer,
-                            screenshot.colorSpace
-                        )
-                        val software = hardware?.copy(Bitmap.Config.ARGB_8888, false)
-                        hardware?.recycle()
-                        screenshot.hardwareBuffer.close()
-                        if (software != null) {
-                            lastFrameW = software.width
-                            lastFrameH = software.height
-                        }
-                        onResult(software)
-                    }
-
-                    override fun onFailure(errorCode: Int) {
-                        val reason = when (errorCode) {
-                            3 -> "درخواست اسکرین‌شات خیلی سریع فرستاده شد"
-                            2 -> "دسترسی سرویس به اسکرین‌شات داده نشده"
-                            else -> "خطای سیستم"
-                        }
-                        AdviceLog.error("اسکرین‌شات ناموفق بود: $reason (کد $errorCode)")
-                        onResult(null)
-                    }
-                }
-            )
-        } catch (e: Exception) {
-            AdviceLog.error("اسکرین‌شات اجرا نشد: ${e.message}")
-            onResult(null)
+        // Hide the floating panel for a moment so that it is not part of the picture the AI sees.
+        val h = hud
+        if (h != null) {
+            mainHandler.post { h.setInvisible(true) }
         }
+        val restore: () -> Unit = { h?.let { hh -> mainHandler.post { hh.setInvisible(false) } } }
+        mainHandler.postDelayed({
+            try {
+                takeScreenshot(
+                    Display.DEFAULT_DISPLAY,
+                    mainExecutor,
+                    object : AccessibilityService.TakeScreenshotCallback {
+                        override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
+                            restore()
+                            val hardware = Bitmap.wrapHardwareBuffer(
+                                screenshot.hardwareBuffer,
+                                screenshot.colorSpace
+                            )
+                            val software = hardware?.copy(Bitmap.Config.ARGB_8888, false)
+                            hardware?.recycle()
+                            screenshot.hardwareBuffer.close()
+                            if (software != null) {
+                                lastFrameW = software.width
+                                lastFrameH = software.height
+                            }
+                            onResult(software)
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            restore()
+                            val reason = when (errorCode) {
+                                3 -> "درخواست اسکرین‌شات خیلی سریع فرستاده شد"
+                                2 -> "دسترسی سرویس به اسکرین‌شات داده نشده"
+                                else -> "خطای سیستم"
+                            }
+                            AdviceLog.error("اسکرین‌شات ناموفق بود: $reason (کد $errorCode)")
+                            onResult(null)
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                restore()
+                AdviceLog.error("اسکرین‌شات اجرا نشد: ${e.message}")
+                onResult(null)
+            }
+        }, if (h != null) 90L else 0L)
     }
 
     /** Full display size in pixels, the same space the screenshot and the gestures use. */

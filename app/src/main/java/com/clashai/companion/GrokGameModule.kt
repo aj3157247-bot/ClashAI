@@ -48,7 +48,7 @@ class GrokGameModule : GameModule {
     @Volatile private var awaitingEffect = false
 
     override fun matches(packageName: String?, frame: Bitmap): Boolean {
-        if (!AiSettings.cloudAllowed() || AiSettings.apiKey.isBlank()) return false
+        if (!AiSettings.cloudAllowed() || (AiSettings.apiKey.isBlank() && !AiSettings.hasBackup())) return false
         if (packageName != currentPackage) resetFor(packageName)
         return true
     }
@@ -133,21 +133,11 @@ class GrokGameModule : GameModule {
         val sentH = image.height.toFloat()
         val frameW = frame.width.toFloat()
         val frameH = frame.height.toFloat()
-        val key = AiSettings.apiKey
-        val model = AiSettings.model
-        val endpoint = AiSettings.endpoint
 
         AdviceLog.info("در حال ارسال تصویر بازی به هوش مصنوعی...")
         worker.execute {
             try {
-                val advice = try {
-                    GrokClient.askForAction(key, endpoint, model, image, ctx)
-                } catch (first: Exception) {
-                    // The first AI failed or is rate limited: let the backup AI answer, if there is one.
-                    if (!AiSettings.hasBackup()) throw first
-                    AdviceLog.info("هوش مصنوعی اول جواب نداد؛ هوش مصنوعی دوم تصمیم می‌گیرد")
-                    GrokClient.askForAction(AiSettings.backupKey, AiSettings.backupEndpoint, AiSettings.backupModel, image, ctx)
-                }
+                val advice = AiRouter.ask(image, ctx)
                 AdviceLog.update(advice)
                 learnGame(advice)
 
@@ -161,7 +151,7 @@ class GrokGameModule : GameModule {
                 adaptiveGapMs = adaptiveGapMs * 9L / 10L
                 waitStreak = if (actions.isEmpty()) waitStreak + 1 else 0
                 AdviceLog.info(
-                    AdviceLog.lastText + " | " +
+                    AdviceLog.lastText + " | " + AiRouter.lastNote + " | " +
                         (if (actions.isEmpty()) "بدون لمس (wait)" else actions.joinToString(" ، ") { describe(it) })
                 )
 

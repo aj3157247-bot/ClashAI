@@ -63,6 +63,7 @@ class GrokGameModule : GameModule {
         val pack = GameKnowledge.identify(packageName)
         gameId = pack?.id
         lockedByPackage = pack != null
+        AiSettings.autoRealtime = pack?.realtime == true
         waitStreak = 0
         lastSignature = null
         actionSignature = null
@@ -200,7 +201,10 @@ class GrokGameModule : GameModule {
     private fun learnGame(advice: Advice) {
         if (lockedByPackage) return
         val found = GameKnowledge.identify(advice.gameId) ?: GameKnowledge.identify(advice.game)
-        if (found != null) gameId = found.id
+        if (found != null) {
+            gameId = found.id
+            AiSettings.autoRealtime = found.realtime
+        }
     }
 
     /**

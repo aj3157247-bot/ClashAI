@@ -52,7 +52,7 @@ data class Advice(
             val steps = ArrayList<Step>()
             val arr = j.optJSONArray("actions")
             if (arr != null) {
-                for (k in 0 until minOf(arr.length(), 3)) {
+                for (k in 0 until minOf(arr.length(), if (AiSettings.realtime) 8 else 3)) {
                     arr.optJSONObject(k)?.let { steps.add(stepOf(it)) }
                 }
             } else {
@@ -118,7 +118,7 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
 
     private const val REALTIME_NOTE = "\nREAL-TIME MODE: this is a fast game (racing, runner, action) and you are asked again every 1-3 seconds. " +
         "Answer with a short TIMED PLAN for the next 3-5 seconds: up to 8 actions, each with \"at\" = its start time in ms after the first action (0-5000) and \"ms\" for holds; the phone plays the whole plan by itself without asking you again. Use hold with ms on the gas or move control, and use group to press two controls together " +
-        "(group 1 for both). Never answer wait while the game is running; only wait on menus you cannot pass. Keep the reason very short.\n"
+        "(group 1 for both). Do not answer wait while the game is running unless the game rules above say that waiting is correct (for example saving elixir); otherwise only wait on menus you cannot pass. Keep the reason very short.\n"
 
     private fun buildPrompt(ctx: AgentContext): String {
         val pack = GameKnowledge.byId(ctx.gameId)
@@ -130,11 +130,11 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
             "The magenta grid and the small numbers on the edges were drawn by the controller. They are exact coordinates, not part of the game. Use them to place your touch precisely."
         else ""
         var p = BASE
-        if (AiSettings.realtime) p += REALTIME_NOTE
             .replace("%GRID%", gridText)
             .replace("%GAME%", gameText)
             .replace("%HISTORY%", historyText)
             .replace("%IDS%", GameKnowledge.idList())
+        if (AiSettings.realtime) p += REALTIME_NOTE
         if (ctx.hint.isNotEmpty()) p += "\nIMPORTANT: " + ctx.hint
         return p
     }
@@ -156,7 +156,24 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
 
     private class TransientHttpException(msg: String) : Exception(msg)
 
-    private fun request(apiKey: String, endpoint: String, model: String, frame: Bitmap, ctx: AgentContext): Advice {
+    /** Fixes common typing mistakes in the API address (for example "vl" instead of "v1", or a missing /chat/completions). */
+    fun normalizeEndpoint(raw: String): String {
+        var e = raw.trim().trimEnd('/')
+        if (e.isEmpty()) return e
+        if (!e.startsWith("http://") && !e.startsWith("https://")) e = "https://$e"
+        e = e.replace(Regex("/vl(/|$)"), "/v1$1")
+        if (!e.endsWith("/chat/completions")) {
+            e = when {
+                e.endsWith("/v1") || e.endsWith("/v1beta/openai") || e.endsWith("/openai") || e.endsWith("/api/v1") -> "$e/chat/completions"
+                e.contains("openrouter.ai") -> "https://openrouter.ai/api/v1/chat/completions"
+                else -> e
+            }
+        }
+        return e
+    }
+
+    private fun request(apiKey: String, endpointRaw: String, model: String, frame: Bitmap, ctx: AgentContext): Advice {
+        val endpoint = normalizeEndpoint(endpointRaw)
         val jpeg = ByteArrayOutputStream().use { out ->
             frame.compress(Bitmap.CompressFormat.JPEG, if (AiSettings.realtime) 60 else 85, out)
             out.toByteArray()
@@ -169,9 +186,9 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
         val textPart = JSONObject().put("type", "text").put("text", buildPrompt(ctx))
         val message = JSONObject()
             .put("role", "user")
-            .put("content", JSONArray().put(imagePart).put(textPart))
+            .put("content", JSONArray().put(textPart).put(imagePart))
         val body = JSONObject()
-            .put("model", model)
+            .put("model", model.trim())
             .put("temperature", 0.15)
             .put("max_tokens", if (AiSettings.realtime) 500 else 1400)
             .put("messages", JSONArray().put(message))
@@ -182,7 +199,11 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
             readTimeout = 60_000
             doOutput = true
             setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Authorization", "Bearer $apiKey")
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("Authorization", "Bearer ${apiKey.trim()}")
+            // OpenRouter asks for these two headers (harmless for other providers).
+            setRequestProperty("HTTP-Referer", "https://github.com/clashai")
+            setRequestProperty("X-Title", "AI Player")
         }
         try {
             conn.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
@@ -194,16 +215,55 @@ Optional per action: "ms" = how long a hold or swipe lasts in milliseconds, and 
             }
             if (code >= 500) throw TransientHttpException("HTTP $code")
             if (code == 401 || code == 403) throw IllegalStateException("کلید API پذیرفته نشد (HTTP $code). کلید را دوباره بررسی کن")
-            if (code == 404) throw IllegalStateException("آدرس یا نام مدل پیدا نشد (HTTP 404). آدرس API و نام مدل را در تنظیمات بررسی کن")
-            if (code !in 200..299) throw IllegalStateException("HTTP $code: ${text.take(200)}")
-            val content = JSONObject(text)
-                .getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-            return Advice.parse(content)
+            if (code == 404) throw IllegalStateException("آدرس یا نام مدل پیدا نشد (HTTP 404). آدرس: $endpoint | مدل: $model")
+            if (code !in 200..299) throw IllegalStateException("HTTP $code: ${apiError(text) ?: text.take(200)}")
+
+            val trimmed = text.trimStart()
+            if (!trimmed.startsWith("{")) {
+                // An HTML page came back: the address is not an API address.
+                throw IllegalStateException("آدرس API اشتباه است؛ به‌جای JSON یک صفحه‌ی وب برگشت. آدرس درست OpenRouter: https://openrouter.ai/api/v1/chat/completions (آدرس فعلی: $endpoint)")
+            }
+            val json = JSONObject(trimmed)
+            // Some providers answer 200 with an error object (OpenRouter does this for free models that are busy).
+            json.optJSONObject("error")?.let { err ->
+                val c = err.optInt("code", 0)
+                if (c == 429) throw RateLimitException(20L)
+                if (c in 500..599) throw TransientHttpException("خطای سرور ($c)")
+                throw IllegalStateException(err.optString("message", "خطای نامشخص API"))
+            }
+            val choices = json.optJSONArray("choices")
+            if (choices == null || choices.length() == 0) throw TransientHttpException("پاسخ خالی از API")
+            val msg = choices.getJSONObject(0).optJSONObject("message")
+                ?: throw TransientHttpException("پیام خالی از API")
+            val content = extractContent(msg)
+            if (content.isBlank()) throw TransientHttpException("متن پاسخ خالی بود (مدل تصویر را نپذیرفته یا فکر کرده و جواب نداده)")
+            return try { Advice.parse(content) } catch (e: org.json.JSONException) {
+                throw TransientHttpException("JSON پاسخ نامعتبر بود")
+            } catch (e: IllegalStateException) {
+                throw TransientHttpException(e.message ?: "پاسخ نامعتبر")
+            }
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun apiError(text: String): String? = try {
+        val j = JSONObject(text.trim())
+        j.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() } ?: j.optString("message").takeIf { it.isNotBlank() }
+    } catch (e: Exception) { null }
+
+    /** The content may be a string or a list of parts; some reasoning models put the answer in other fields. */
+    private fun extractContent(msg: JSONObject): String {
+        val c = msg.opt("content")
+        if (c is String && c.isNotBlank()) return c
+        if (c is JSONArray) {
+            val sb = StringBuilder()
+            for (i in 0 until c.length()) {
+                val part = c.optJSONObject(i) ?: continue
+                sb.append(part.optString("text", ""))
+            }
+            if (sb.isNotBlank()) return sb.toString()
+        }
+        return msg.optString("reasoning_content", "").ifBlank { msg.optString("reasoning", "") }
     }
 }

@@ -91,8 +91,12 @@ object AiSettings {
         }
 
     /** Fast cloud loop for real-time games (racing, action): smaller pictures, short pauses, timed holds. */
+    /** Set automatically when the detected game is a real-time one (racing, shooter, Clash Royale). */
+    @Volatile
+    var autoRealtime: Boolean = false
+
     var realtime: Boolean
-        get() = prefs?.getBoolean(KEY_REALTIME, false) ?: false
+        get() = autoRealtime || (prefs?.getBoolean(KEY_REALTIME, false) ?: false)
         set(value) {
             prefs?.edit()?.putBoolean(KEY_REALTIME, value)?.apply()
         }
@@ -106,7 +110,7 @@ object AiSettings {
     var backupEndpoint: String
         get() = prefs?.getString(KEY_B_ENDPOINT, "") ?: ""
         set(value) {
-            prefs?.edit()?.putString(KEY_B_ENDPOINT, value.trim())?.apply()
+            prefs?.edit()?.putString(KEY_B_ENDPOINT, GrokClient.normalizeEndpoint(value))?.apply()
         }
     var backupModel: String
         get() = prefs?.getString(KEY_B_MODEL, "") ?: ""
@@ -124,7 +128,7 @@ object AiSettings {
     var endpoint: String
         get() = prefs?.getString(KEY_ENDPOINT, DEFAULT_ENDPOINT)?.takeIf { it.isNotBlank() } ?: DEFAULT_ENDPOINT
         set(value) {
-            prefs?.edit()?.putString(KEY_ENDPOINT, value.trim())?.apply()
+            prefs?.edit()?.putString(KEY_ENDPOINT, GrokClient.normalizeEndpoint(value))?.apply()
         }
 
     var model: String

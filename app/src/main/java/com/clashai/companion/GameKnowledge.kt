@@ -6,11 +6,59 @@ package com.aiplayer.companion
  * to the prompt once the game is known. A focused pack makes the model much stronger than a
  * generic prompt.
  */
-class GamePack(val id: String, val title: String, val keywords: List<String>, val rules: String)
+class GamePack(val id: String, val title: String, val keywords: List<String>, val rules: String, val realtime: Boolean = false)
 
 object GameKnowledge {
 
     val packs: List<GamePack> = listOf(
+        GamePack(
+            "clashroyale", "Clash Royale", listOf("clashroyale", "royale"),
+            """
+            CLASH ROYALE (real-time, 2 or 4 players, 3 minutes + overtime). The arena is split by a river; you may deploy ONLY on your own half (bottom), plus the area near a tower you have destroyed.
+            Your hand is the 4 cards at the bottom; the next card is shown small at the left. The elixir bar is the purple bar at the bottom: read the number. A card can be played only if elixir >= its cost (the number on the card).
+            To deploy: SWIPE from the card to the target spot (ms about 250). If a card is already selected (highlighted), a single tap on the target spot also works.
+            Rules of thumb:
+            1) Do not spend elixir when the opponent has not committed: wait until elixir is 6+ (waiting is correct here, answer wait), unless the opponent is attacking.
+            2) DEFEND first: place the defender BEHIND your princess tower on the lane being attacked (close to the king tower), so the tower helps. Ranged or splash vs swarms, tanks/buildings vs big tanks.
+            3) After a successful defense, counter-push with the surviving unit: put a support card (ranged or splash) behind it and a tank in front.
+            4) Never spend more elixir than the opponent just spent unless you win value. Keep a cheap cycle card for emergencies.
+            5) Use spells (zap, fireball, arrows) only when they kill 2+ units or finish a tower. Use buildings (cannon, tesla) in the middle of the defending half to pull tanks.
+            6) In double elixir (last minute / overtime) be aggressive on the weaker lane; in overtime any destroyed tower wins.
+            Menus: tap Battle to start, tap OK / Continue after a match. Never open the shop, never tap Buy / chest-unlock-with-gems / pass royale offers.
+            """.trimIndent(), true
+        ),
+        GamePack(
+            "racing", "Car racing", listOf("racing", "asphalt", "carx", "needforspeed", "trafficracer", "hillclimb", "drift", "rally", "burnout", "speed", "forza", "csr"),
+            """
+            CAR RACING (real-time). First find the controls: usually steer left / right arrows (or tilt) on one side, gas (accelerate) and brake on the other, sometimes a nitro button.
+            Keep the gas held down for the whole plan (hold with a long ms such as 2500-4000) in group 1, together with a short steering tap or hold in the same group.
+            Look at the road 1-2 seconds ahead: steer early and gently toward the open lane, away from traffic and walls; brake (hold the brake) only before sharp curves.
+            Use nitro on straight sections, not in curves. Drift games: tap/hold steering through the corner then release.
+            If an obstacle is directly ahead in your lane, change lanes toward the emptier side.
+            If a menu, result screen or reward popup shows: tap Next / Continue / Race / Start (free options only, never Buy or watch-ad-for-reward).
+            """.trimIndent(), true
+        ),
+        GamePack(
+            "shooter", "Shooter / war game", listOf("shooter", "pubg", "freefire", "callofduty", "codm", "warzone", "modernstrike", "sniper", "fps", "bullet", "gunship", "critical", "standoff", "bgmi", "shadowgun"),
+            """
+            SHOOTER / WAR GAME (real-time, touch controls). The left thumb area is the MOVE joystick; the right half is AIM (drag to turn the camera) and a FIRE button (usually on the right).
+            Each plan (3-5 seconds): (a) move with a hold on the joystick (group 1), (b) aim by a short swipe on the right half toward the enemy, then (c) fire with a hold on the fire button (group 1 or 2) for 300-800 ms bursts.
+            Enemies: red name tags, red markers or moving silhouettes; the crosshair is at the screen center. Move enemy toward the center with a small swipe, then fire.
+            Stay behind cover, strafe sideways while shooting, retreat when health is low (health bar), reload when the ammo counter is 0, pick up weapons or health shown nearby.
+            In training, single player or bot modes this is fine; in menus tap Play / Start / Continue. Never tap Buy, Offers, Chat.
+            """.trimIndent(), true
+        ),
+        GamePack(
+            "puzzle", "Puzzle games", listOf("puzzle", "watersort", "sortpuz", "blockpuzzle", "woodoku", "blockblast", "jigsaw", "merge", "bubbleshooter", "bubble", "wordcross", "wordconnect", "unblock", "flow", "mazes"),
+            """
+            PUZZLE GAMES. Read the objective at the top and the rules shown on the screen, then solve with logic, not random taps.
+            Water / color sort: move liquid from a tube to a tube only if the top colors match or the target is empty and there is room; finish tubes of a single color; do not fill empty tubes early.
+            Block puzzle (1010 / Woodoku / Block Blast): DRAG a piece from the tray to the board with a swipe (ms 300); choose spots that complete rows, columns or squares, keep large empty areas, never leave isolated single holes.
+            Merge games: drag identical items onto each other; keep space free on the board. Bubble shooter: swipe/aim to a spot where the same color touches 2 or more; prefer shots that drop hanging groups.
+            Word games: connect letters with one swipe along adjacent letters. Pipe / flow: drag from one dot to the same-color dot without crossing other paths.
+            If the result of the last move was "NO visible change", try a different piece or a different spot.
+            """.trimIndent(), false
+        ),
         GamePack(
             "ludo", "Ludo", listOf("ludo", "parchis", "mensch"),
             """
@@ -75,11 +123,15 @@ object GameKnowledge {
             """.trimIndent()
         ),
         GamePack(
-            "match3", "Match-3", listOf("match3", "candy", "bejeweled", "jewel", "gems", "gardenscapes", "homescapes", "toonblast", "blast"),
+            "match3", "Match-3 (Candy Crush)", listOf("match3", "candy", "bejeweled", "jewel", "gems", "gardenscapes", "homescapes", "toonblast", "blast", "royalmatch", "fishdom"),
             """
-            MATCH-3. A move is a swipe from one tile to the ADJACENT tile (one cell away, center to center).
-            Follow the level objective shown at the top. Prefer moves that make 4 or 5 in a row or L/T shapes (special pieces), combine specials, and work near the objective items.
-            Do not waste moves when the move counter is low; do not tap booster purchase buttons.
+            MATCH-3 (Candy Crush style). A move is ONE swipe from a tile to its ADJACENT tile (one cell away, center to center), which swaps them.
+            Method: first read the board as rows and columns of colors (look at the objective and moves left at the top). Then list swaps that make 3+ in a row or column.
+            Priority: 1) make a color bomb (5 in a row) or any special candy (4 in a row = striped, L/T shape = wrapped); 2) activate a special candy or combine two specials (they are the strongest);
+            3) clear the level objective (jelly, ingredients, blockers) - moves close to the objective first; 4) moves low on the board cause cascades, but when moves left are few prefer moves near the objective;
+            5) ingredients (cherries/hazelnuts): clear the tiles under them so they fall to the bottom.
+            Aim exactly at the cell centers of the two tiles. If the swipe had NO visible change, the tiles were not adjacent or the swap makes no match: pick another pair.
+            Tap Play / Next / Continue on menus; never tap buy buttons, extra moves with gems, lives purchases or the daily-offer popups.
             """.trimIndent()
         ),
         GamePack(
@@ -138,6 +190,6 @@ object GameKnowledge {
     const val GENERIC_RULES = """
 GENERIC GAME. Work out the objective from the screen. In menus tap Play / Start / Continue / Next / Claim (free rewards only).
 In tutorials follow the highlighted hint. Close ordinary dialogs with their X or Close button. Make the move that progresses the objective the most under the game's rules.
-Real-time action games (racing, runners, shooters) need REAL-TIME MODE (a setting). If the prompt does not say REAL-TIME MODE and the game needs reflexes, answer wait. In REAL-TIME MODE keep the car or character safe: stay on the road or path, avoid obstacles and enemies' fire, collect rewards, and use the visible controls (hold the gas, steer left or right, jump, fire).
+Real-time action games (racing, runners, shooters, tower-defense / card battles) need REAL-TIME MODE, which is switched on automatically for the known ones. For an unknown fast game, set game_id to "unknown" and answer with a careful single action. In REAL-TIME MODE keep the car or character safe: stay on the road or path, avoid obstacles and enemies' fire, collect rewards, and use the visible controls (hold the gas, steer left or right, jump, fire).
 """
 }

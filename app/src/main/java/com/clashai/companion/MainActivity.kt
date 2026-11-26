@@ -246,6 +246,7 @@ fun UniversalGameAI() {
                         AiSettings.apiKey = keyText
                         AiSettings.model = modelText
                         AiSettings.endpoint = endpointText
+                        endpointText = AiSettings.endpoint
                         status = if (keyText.isBlank()) "کلید خالی است" else "تنظیمات Grok ذخیره شد"
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -278,6 +279,7 @@ fun UniversalGameAI() {
                         AiSettings.backupKey = bKeyText
                         AiSettings.backupEndpoint = bEndpointText
                         AiSettings.backupModel = bModelText
+                        bEndpointText = AiSettings.backupEndpoint
                         status = if (AiSettings.hasBackup()) "هوش مصنوعی دوم ذخیره شد" else "هوش مصنوعی دوم ناقص است (کلید، آدرس و مدل هر سه لازم است)"
                     },
                     modifier = Modifier.fillMaxWidth()

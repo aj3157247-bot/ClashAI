@@ -613,7 +613,7 @@ class ChessModule : GameModule {
                     } else {
                         AdviceLog.info("شطرنج: صبر برای پایان انیمیشن...")
                     }
-                    nextAt = now + (if (mismatch >= LOST_AFTER) 1500L else 500L)
+                    nextAt = now + (if (mismatch >= LOST_AFTER) 900L else 350L)
                     return GameAction.Wait
                 }
             }
@@ -681,7 +681,7 @@ class ChessModule : GameModule {
         private const val DETECT_GAP_MS = 2500L
         private const val TAP_GAP_MS = 400L
         private const val SETTLE_MS = 1300L
-        private const val THINK_MS = 1400L
+        private const val THINK_MS = 1800L
         private const val LOST_AFTER = 14
         private const val RESYNC_AFTER = 4
         private const val BOOTSTRAP_GAP_MS = 1500L

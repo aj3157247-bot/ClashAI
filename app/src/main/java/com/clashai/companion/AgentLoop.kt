@@ -41,6 +41,9 @@ object AgentLoop {
     fun start() {
         if (running) return
         running = true
+        capturing = false
+        captureStartedAt = 0L
+        captureToken++
         lastActionAt = System.currentTimeMillis()
         AdviceLog.info("ربات روشن شد؛ در حال نگاه کردن به صفحه...")
         handler.post(tick)
@@ -49,15 +52,26 @@ object AgentLoop {
     fun stop() {
         running = false
         handler.removeCallbacks(tick)
+        // Invalidate any callback that may arrive after Stop.
+        captureToken++
+        capturing = false
+        captureStartedAt = 0L
         AdviceLog.info("ربات متوقف شد")
     }
 
     @Volatile
     private var capturing = false
 
-    // Android allows only a few screenshots per second, so space them out.
-    private const val CAPTURE_GAP_MS = 450L
-    private const val FAST_CAPTURE_GAP_MS = 400L
+    // Android screenshot callbacks can occasionally be lost. Expire a stuck request
+    // so the agent can recover without requiring the user to restart it.
+    @Volatile
+    private var captureStartedAt = 0L
+    @Volatile
+    private var captureToken = 0L
+
+    private const val CAPTURE_GAP_MS = 350L
+    private const val FAST_CAPTURE_GAP_MS = 280L
+    private const val CAPTURE_TIMEOUT_MS = 2500L
     private var lastCaptureAt = 0L
     private var lastActionAt = 0L
 
@@ -79,12 +93,36 @@ object AgentLoop {
         // Ask for a fresh screenshot. Only one request at a time.
         val now = System.currentTimeMillis()
         val gap = if (AiSettings.realtime) FAST_CAPTURE_GAP_MS else CAPTURE_GAP_MS
+        if (capturing && now - captureStartedAt > CAPTURE_TIMEOUT_MS) {
+            // A timed-out callback may still arrive later; its token prevents it
+            // from publishing an obsolete frame over a newer screenshot.
+            capturing = false
+            captureStartedAt = 0L
+            captureToken++
+            AdviceLog.error("گرفتن تصویر گیر کرد؛ تلاش دوباره...")
+        }
         if (!capturing && now - lastCaptureAt >= gap) {
             capturing = true
+            captureStartedAt = now
             lastCaptureAt = now
-            service.captureFrame { bmp ->
-                capturing = false
-                if (bmp != null) FrameBus.publish(bmp)
+            val token = ++captureToken
+            try {
+                service.captureFrame { bmp ->
+                    if (token == captureToken) {
+                        capturing = false
+                        captureStartedAt = 0L
+                        if (bmp != null) FrameBus.publish(bmp)
+                    } else {
+                        // Ignore and release a late frame from an expired request.
+                        bmp?.recycle()
+                    }
+                }
+            } catch (e: Throwable) {
+                if (token == captureToken) {
+                    capturing = false
+                    captureStartedAt = 0L
+                }
+                throw e
             }
         }
 

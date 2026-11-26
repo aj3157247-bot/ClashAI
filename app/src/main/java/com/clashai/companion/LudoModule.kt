@@ -113,7 +113,7 @@ class LudoModule : GameModule {
                 phase = Phase.ROLL
                 nextAt = now + 1000L
             } else {
-                nextAt = now + 700L
+                nextAt = now + 420L
             }
             DebugDump.save(frame, "ludo_dice")
             AdviceLog.info("لودو: عدد تاس خوانده نشد")
@@ -665,7 +665,9 @@ class LudoModule : GameModule {
             if (i == -1) score += if (onBoard == 0) 70.0 else 55.0
 
             val v = victim[key]
-            if (v != null && !safe && onTrack) score += 100.0 + v * 1.5
+            // Capturing an opponent is a major tactical gain: prioritize it over
+            // ordinary progress, while still respecting safe cells and legal moves.
+            if (v != null && !safe && onTrack) score += 260.0 + v * 2.0
 
             if (j == FINISH_INDEX) score += 90.0
             else if (j >= 51 && i in 0..50) score += 35.0
@@ -737,9 +739,9 @@ class LudoModule : GameModule {
         private const val BY0 = 647.2f
         private const val CELL_X = 64.33f
 
-        private const val DICE_SETTLE_MS = 1800L
-        private const val MOVE_ANIM_MS = 2600L
-        private const val NOT_MY_TURN_MS = 2500L
+        private const val DICE_SETTLE_MS = 1100L
+        private const val MOVE_ANIM_MS = 1600L
+        private const val NOT_MY_TURN_MS = 1600L
 
         private const val TAP_LIFT = 28f
         private const val FINISH_INDEX = 56

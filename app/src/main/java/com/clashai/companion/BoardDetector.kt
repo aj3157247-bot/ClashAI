@@ -93,42 +93,47 @@ object BoardDetector {
         return Geo(bx * 2f, by * 2f, bc * 2f)
     }
 
-    /** Median color of the four inset corners of a square: the empty square color, even when a piece stands on it. */
+    // Sample points inside a square, away from the middle where a piece stands: four corners and the middle of the
+    // left and right edge. Some apps print a rank number in the top-left corner and a file letter in the bottom-right
+    // corner (a1 has both). Two text corners used to spoil the old 4-point median, so an EMPTY a1 looked like a black
+    // piece and the bot lost track of the game as soon as the a1 rook moved. Six points tolerate two bad ones.
+    private val SAMPLE_X = floatArrayOf(0.10f, 0.90f, 0.10f, 0.90f, 0.08f, 0.93f)
+    private val SAMPLE_Y = floatArrayOf(0.12f, 0.12f, 0.90f, 0.90f, 0.55f, 0.55f)
+
+    /** Median color of the inset sample points of a square: the empty square color, even when a piece stands on it. */
     fun baseline(px: IntArray, w: Int, h: Int, g: Geo, row: Int, col: Int, out: IntArray) {
-        val rs = IntArray(4)
-        val gs = IntArray(4)
-        val bs = IntArray(4)
-        var k = 0
-        for (oy in floatArrayOf(0.12f, 0.90f)) {
-            for (ox in floatArrayOf(0.10f, 0.90f)) {
-                val cx = (g.x0 + (col + ox) * g.cell).toInt()
-                val cy = (g.y0 + (row + oy) * g.cell).toInt()
-                var r = 0
-                var gg = 0
-                var b = 0
-                var n = 0
-                for (y in max(0, cy - 2)..min(h - 1, cy + 2)) {
-                    for (x in max(0, cx - 2)..min(w - 1, cx + 2)) {
-                        val p = px[y * w + x]
-                        r += (p shr 16) and 0xFF
-                        gg += (p shr 8) and 0xFF
-                        b += p and 0xFF
-                        n++
-                    }
+        val rs = IntArray(6)
+        val gs = IntArray(6)
+        val bs = IntArray(6)
+        for (k in 0..5) {
+            val cx = (g.x0 + (col + SAMPLE_X[k]) * g.cell).toInt()
+            val cy = (g.y0 + (row + SAMPLE_Y[k]) * g.cell).toInt()
+            var r = 0
+            var gg = 0
+            var b = 0
+            var n = 0
+            for (y in max(0, cy - 2)..min(h - 1, cy + 2)) {
+                for (x in max(0, cx - 2)..min(w - 1, cx + 2)) {
+                    val p = px[y * w + x]
+                    r += (p shr 16) and 0xFF
+                    gg += (p shr 8) and 0xFF
+                    b += p and 0xFF
+                    n++
                 }
-                if (n == 0) n = 1
-                rs[k] = r / n; gs[k] = gg / n; bs[k] = b / n
-                k++
             }
+            if (n == 0) n = 1
+            rs[k] = r / n
+            gs[k] = gg / n
+            bs[k] = b / n
         }
-        out[0] = median4(rs)
-        out[1] = median4(gs)
-        out[2] = median4(bs)
+        out[0] = median6(rs)
+        out[1] = median6(gs)
+        out[2] = median6(bs)
     }
 
-    private fun median4(a: IntArray): Int {
+    private fun median6(a: IntArray): Int {
         val s = a.sortedArray()
-        return (s[1] + s[2]) / 2
+        return (s[2] + s[3]) / 2
     }
 
     /** True when the 64 squares alternate between two clearly different colors. */

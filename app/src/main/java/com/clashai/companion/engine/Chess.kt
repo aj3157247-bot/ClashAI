@@ -15,7 +15,7 @@ class ChessPos(
 
 /**
  * A small but complete chess engine: legal move generation (castling, en passant, promotion),
- * negamax alpha-beta search with iterative deepening, quiescence search and a time limit.
+ * and (in ChessEngine.kt) a strong iterative-deepening search with a transposition table.
  * A move is an Int: from | (to shl 6) | (promotionPiece shl 12).
  */
 object Chess {
@@ -26,10 +26,6 @@ object Chess {
     const val Q = 5
     const val K = 6
 
-    private const val INF = 1_000_000
-    private const val MATE = 100_000
-
-    private val VALUE = intArrayOf(0, 100, 320, 330, 500, 900, 0)
     private val KN_DF = intArrayOf(1, 2, 2, 1, -1, -2, -2, -1)
     private val KN_DR = intArrayOf(2, 1, -1, -2, -2, -1, 1, 2)
     // Eight directions: even index = straight, odd index = diagonal.
@@ -260,138 +256,31 @@ object Chess {
         return out
     }
 
-    // ------------------------------------------------------------------ evaluation
+    // ------------------------------------------------------------------ search (see ChessEngine.kt)
 
-    private fun evaluate(pos: ChessPos): Int {
-        val b = pos.sq
-        var material = 0
-        for (s in 0..63) {
-            val t = abs(b[s].toInt())
-            if (t != 0 && t != K && t != P) material += VALUE[t]
-        }
-        val endgame = material < 2600
-        var score = 0
-        for (s in 0..63) {
-            val p = b[s].toInt()
-            if (p == 0) continue
-            val t = abs(p)
-            val white = p > 0
-            val f = s and 7
-            val r = s shr 3
-            val adv = if (white) r else 7 - r
-            val center = 14 - abs(2 * f - 7) - abs(2 * r - 7)
-            var v = VALUE[t]
-            when (t) {
-                P -> v += adv * 6 + center + (if (adv >= 5) 12 else 0)
-                N -> v += center * 4
-                B -> v += center * 2
-                R -> if (adv == 6) v += 15
-                Q -> v += center
-                K -> {
-                    if (endgame) v += center * 4
-                    else {
-                        v += -center * 2 - adv * 8
-                        if (adv == 0 && (f == 1 || f == 2 || f == 6)) v += 25
-                    }
-                }
-            }
-            score += if (white) v else -v
-        }
-        return if (pos.whiteToMove) score else -score
+    private val engine: ChessEngine by lazy { ChessEngine() }
+
+    /** Forget everything learned in the previous game (call when a new game starts). */
+    fun newGame() {
+        engine.newGame()
     }
 
-    // ------------------------------------------------------------------ search
+    /** Depth reached and score (centipawns, for the side to move) of the last search. */
+    fun lastDepth(): Int = engine.lastDepth
 
-    private fun orderScore(pos: ChessPos, m: Int): Int {
-        val victim = abs(pos.sq[to(m)].toInt())
-        val attacker = abs(pos.sq[from(m)].toInt())
-        var s = 0
-        if (victim != 0) s += 10_000 + 10 * VALUE[victim] - VALUE[attacker]
-        else if (attacker == P && to(m) == pos.ep) s += 10_000 + 900
-        if (promo(m) == Q) s += 9_000
-        return s
+    fun lastScore(): Int = engine.lastScore
+
+    /**
+     * Returns the best move for the side to move, or -1 when there is no legal move.
+     * `prior` = positions seen earlier in this game (oldest first); used to avoid or seek repetitions.
+     * `timeMs` is a hard limit. The engine stops earlier when the answer is already clear.
+     */
+    fun bestMove(pos: ChessPos, timeMs: Long, prior: List<ChessPos>): Int {
+        val m = engine.bestMove(pos, timeMs, prior)
+        // The touch layer can only pick the queen in a promotion dialog, so never choose another piece.
+        if (m >= 0 && promo(m) != 0 && promo(m) != Q) return mv(from(m), to(m), Q)
+        return m
     }
 
-    private fun ordered(pos: ChessPos, moves: List<Int>): List<Int> =
-        moves.sortedByDescending { orderScore(pos, it) }
-
-    private class Searcher(private val deadline: Long) {
-        var aborted = false
-        private var nodes = 0
-
-        private fun tick() {
-            nodes++
-            if ((nodes and 1023) == 0 && System.currentTimeMillis() > deadline) aborted = true
-        }
-
-        fun negamax(pos: ChessPos, depthIn: Int, alphaIn: Int, beta: Int, ply: Int): Int {
-            tick()
-            if (aborted) return 0
-            var depth = depthIn
-            val checked = inCheck(pos.sq, pos.whiteToMove)
-            if (checked && ply < 10) depth++
-            if (depth <= 0) return quiesce(pos, alphaIn, beta, 0)
-            var alpha = alphaIn
-            var any = false
-            for (m in ordered(pos, pseudo(pos, false))) {
-                val n = apply(pos, m)
-                if (inCheck(n.sq, pos.whiteToMove)) continue
-                any = true
-                val s = -negamax(n, depth - 1, -beta, -alpha, ply + 1)
-                if (aborted) return 0
-                if (s >= beta) return beta
-                if (s > alpha) alpha = s
-            }
-            if (!any) return if (checked) -MATE + ply else 0
-            return alpha
-        }
-
-        private fun quiesce(pos: ChessPos, alphaIn: Int, beta: Int, qd: Int): Int {
-            tick()
-            if (aborted) return 0
-            val stand = evaluate(pos)
-            if (stand >= beta) return beta
-            var alpha = alphaIn
-            if (stand > alpha) alpha = stand
-            if (qd >= 4) return alpha
-            for (m in ordered(pos, pseudo(pos, true))) {
-                val n = apply(pos, m)
-                if (inCheck(n.sq, pos.whiteToMove)) continue
-                val s = -quiesce(n, -beta, -alpha, qd + 1)
-                if (aborted) return 0
-                if (s >= beta) return beta
-                if (s > alpha) alpha = s
-            }
-            return alpha
-        }
-    }
-
-    /** Returns the best move for the side to move, or -1 when there is no legal move. */
-    fun bestMove(pos: ChessPos, timeMs: Long): Int {
-        val moves = legalMoves(pos)
-        if (moves.isEmpty()) return -1
-        if (moves.size == 1) return moves[0]
-        val deadline = System.currentTimeMillis() + timeMs
-        var best = moves[0]
-        var list: List<Int> = ordered(pos, moves)
-        for (depth in 1..6) {
-            val s = Searcher(deadline)
-            var alpha = -INF
-            var bm = -1
-            for (m in list) {
-                val sc = -s.negamax(apply(pos, m), depth - 1, -INF, -alpha, 1)
-                if (s.aborted) break
-                if (sc > alpha) { alpha = sc; bm = m }
-            }
-            if (s.aborted) break
-            if (bm != -1) {
-                best = bm
-                val first = bm
-                list = listOf(first) + list.filter { it != first }
-            }
-            if (alpha > MATE - 50) break
-            if (System.currentTimeMillis() > deadline) break
-        }
-        return best
-    }
+    fun bestMove(pos: ChessPos, timeMs: Long): Int = bestMove(pos, timeMs, emptyList())
 }

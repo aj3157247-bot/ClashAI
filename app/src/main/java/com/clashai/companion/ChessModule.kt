@@ -647,6 +647,24 @@ class ChessModule : GameModule {
             pos = p
         }
 
+        // The tracked position must agree with the screen before the bot touches anything.
+        val verified = verifyPosition(p)
+        if (verified == null) {
+            AdviceLog.info("شطرنج: موقعیت ثبت‌شده با صفحه نمی‌خواند؛ دوباره از روی صفحه می‌خوانم")
+            if (!bootstrap(now)) {
+                nextAt = now + 700L
+                return GameAction.Wait
+            }
+            p = pos ?: return GameAction.Wait
+            if (p.whiteToMove != weWhite) {
+                nextAt = now + 350L
+                return GameAction.Wait
+            }
+        } else if (verified !== p) {
+            p = verified
+            pos = p
+        }
+
         // When the position was read from the screen, castling rights are only a guess. If the same move keeps
         // failing, the game probably refuses it: forget the castling rights and choose another move.
         if (bootstrapped && stuck >= 3 && p.castle != 0) {
@@ -660,6 +678,18 @@ class ChessModule : GameModule {
         if (move == -1) {
             AdviceLog.info("شطرنج: حرکت قانونی ندارم (بازی تمام شده)")
             nextAt = now + 3000L
+            return GameAction.Wait
+        }
+
+        // Last safety check: the piece to move must be ours on the screen, the target must not hold our own piece.
+        val obsNow = obsFor(mode)
+        val fi = screenIndex(Chess.from(move))
+        val ti = screenIndex(Chess.to(move))
+        val fromOk = fi >= 0 && obsNow.occ[fi] && ((obsNow.feat[fi] > threshold) == weWhite)
+        val toOk = ti >= 0 && (!obsNow.occ[ti] || ((obsNow.feat[ti] > threshold) != weWhite))
+        if (!fromOk || !toOk) {
+            AdviceLog.info("شطرنج: حرکت ${Chess.name(move)} با صفحه نمی‌خواند؛ دوباره از روی صفحه می‌خوانم")
+            nextAt = now + (if (bootstrap(now)) 200L else 700L)
             return GameAction.Wait
         }
 
@@ -711,6 +741,56 @@ class ChessModule : GameModule {
         }
         if (fixes == 0 || fixes > 3) return p
         AdviceLog.info("شطرنج: نوع $fixes مهره از روی صفحه اصلاح شد")
+        return ChessPos(board, p.whiteToMove, p.castle, p.ep)
+    }
+
+    /** Index (screen row * 8 + col) of an engine square. */
+    private fun screenIndex(sq: Int): Int {
+        for (i in 0..63) if (engineSq(i / 8, i % 8) == sq) return i
+        return -1
+    }
+
+    /**
+     * Compares the tracked position with the screen on OUR turn, square by square.
+     *  - A different occupancy means the tracker is wrong: returns null (the caller reads the screen again).
+     *  - A different color of a piece (the tracker tolerates one such difference while following) is fixed when the
+     *    screen is clear about it. This stops the bot from treating an enemy piece as its own, which made it tap the
+     *    opponent's pieces.
+     */
+    private fun verifyPosition(p: ChessPos): ChessPos? {
+        val px = cachedPx ?: return p
+        val g = geo ?: return p
+        val obs = obsFor(mode)
+        val colors = PieceClassifier.squareColors(px, cachedW, cachedH, g)
+        val board = p.sq.copyOf()
+        var changed = false
+        for (i in 0..63) {
+            val sq = engineSq(i / 8, i % 8)
+            val cur = board[sq].toInt()
+            val seen = obs.occ[i]
+            if (seen != (cur != 0)) return null
+            if (!seen) continue
+            val seenWhite = obs.feat[i] > threshold
+            if (seenWhite == (cur > 0)) continue
+            if (abs(obs.feat[i] - threshold) < 12) continue   // too close to call: keep the tracked color
+            val f = PieceClassifier.features(px, cachedW, cachedH, g, i / 8, i % 8, colors)
+            val hint = PieceClassifier.hintOnSquare(px, cachedW, cachedH, g, i / 8, i % 8)
+            val kind = PieceClassifier.classify(f, seenWhite, hint)
+            if (kind == 0) return null
+            board[sq] = kind.toByte()
+            changed = true
+        }
+        if (!changed) return p
+        var wk = 0
+        var bk = 0
+        for (s in 0..63) {
+            val v = board[s].toInt()
+            if (v == Chess.K) wk++
+            if (v == -Chess.K) bk++
+        }
+        if (wk != 1 || bk != 1) return null
+        if (Chess.inCheck(board, !p.whiteToMove)) return null
+        AdviceLog.info("شطرنج: رنگ مهره‌ها از روی صفحه اصلاح شد")
         return ChessPos(board, p.whiteToMove, p.castle, p.ep)
     }
 

@@ -575,6 +575,7 @@ class ChessModule : GameModule {
                 stuck = 0
                 lastPlanned = -1
                 bootstrapped = false
+                Chess.newGame()
                 // Learn how this app draws its pieces, so the bot can also join a running game later.
                 val learnedNow = try {
                     PieceClassifier.learnFromStart(squareFeatures(obsFor(mode).occ), weWhite, AiSettings.appContext)
@@ -648,7 +649,7 @@ class ChessModule : GameModule {
             lastPlanned = -1
         }
 
-        val move = Chess.bestMove(p, THINK_MS)
+        val move = Chess.bestMove(p, THINK_MS, history)
         if (move == -1) {
             AdviceLog.info("شطرنج: حرکت قانونی ندارم (بازی تمام شده)")
             nextAt = now + 3000L
@@ -664,7 +665,11 @@ class ChessModule : GameModule {
         if (stuck >= 1) taps.addLast(b)
         taps.addLast(a)
         taps.addLast(b)
-        AdviceLog.info("شطرنج: ${Chess.name(move)} را بازی می‌کنم")
+        // A pawn reaching the last rank: most apps ask which piece to take and show the queen on the
+        // destination square itself, so one more tap there picks the queen. (If the app promotes
+        // automatically, this tap only selects the new queen, which is harmless.)
+        if (Chess.promo(move) != 0) taps.addLast(b)
+        AdviceLog.info("شطرنج: ${Chess.name(move)} را بازی می‌کنم (عمق ${Chess.lastDepth()}، ارزیابی ${Chess.lastScore()})")
         val first = taps.removeFirst()
         nextAt = now + TAP_GAP_MS
         return GameAction.Tap(first[0] / cachedW.coerceAtLeast(1), first[1] / cachedH.coerceAtLeast(1))
@@ -681,7 +686,7 @@ class ChessModule : GameModule {
         private const val DETECT_GAP_MS = 2500L
         private const val TAP_GAP_MS = 400L
         private const val SETTLE_MS = 1300L
-        private const val THINK_MS = 1800L
+        private const val THINK_MS = 2000L
         private const val LOST_AFTER = 14
         private const val RESYNC_AFTER = 4
         private const val BOOTSTRAP_GAP_MS = 1500L

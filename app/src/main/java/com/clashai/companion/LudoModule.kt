@@ -593,108 +593,51 @@ class LudoModule : GameModule {
     }
 
     /**
-     * Danger-aware move choice for 1 to 3 opponents.
-     *
-     * Every opponent walks the same ring rotated by 90 / 180 / 270 degrees, so each of their pieces can be
-     * placed on the blue path by rotating its cell back. From that we know which dice values would let it land
-     * on a given cell next turn. The chance that at least one opponent hits a cell is combined over opponents.
-     * Each legal move is scored by what it gains (capture, finish, lane, safe star, leaving home) and what it
-     * risks (landing in front of an opponent, or leaving a piece that is already threatened).
+     * Chooses the move with LudoBrain (see LudoBrain.kt). This function only translates the pieces found on the
+     * screen into progress numbers: every opponent piece is rotated back onto the blue path, which gives its own
+     * progress (0..50 on the shared track). Pieces in their home box are only counted, pieces in their own lane
+     * cannot be hit and are ignored.
      */
     private fun chooseMove(g: Geo, blue: List<Piece>, others: Map<Int, List<Piece>>, dice: Int): Move? {
-        val reach = ArrayList<HashMap<Int, Int>>()          // per opponent: cell key -> mask of dice values
-        val victim = HashMap<Int, Int>()                    // cell key -> opponent progress on its own path
-        val oppOnBlue = ArrayList<Int>()                    // blue-path indexes that hold an opponent piece
-
+        val colors = ArrayList<Int>()
+        val oppTrack = ArrayList<IntArray>()
+        val oppHome = ArrayList<Int>()
         for ((color, list) in others) {
-            val map = HashMap<Int, Int>()
+            val prog = ArrayList<Int>()
+            var home = 0
             for (o in list) {
                 val c = cellOf(g, o)
-                if (inHome(color, c.first, c.second)) continue
+                if (inHome(color, c.first, c.second)) {
+                    home++
+                    continue
+                }
                 val bf = rot(c.first, c.second, 4 - color)
                 var gi = -2
                 for (t in 0..50) {
-                    if (BLUE_PATH[t][0] == bf[0] && BLUE_PATH[t][1] == bf[1]) { gi = t; break }
+                    if (BLUE_PATH[t][0] == bf[0] && BLUE_PATH[t][1] == bf[1]) {
+                        gi = t
+                        break
+                    }
                 }
-                if (gi < 0) continue                              // on its own lane, cannot be hit
-                val key = c.first * 100 + c.second
-                victim[key] = max(victim[key] ?: 0, gi)
-                for (t in 0..50) {
-                    if (BLUE_PATH[t][0] == c.first && BLUE_PATH[t][1] == c.second) { oppOnBlue.add(t); break }
-                }
-                for (d in 1..6) {
-                    val t = gi + d
-                    if (t > 50) break
-                    val cell = rot(BLUE_PATH[t][0], BLUE_PATH[t][1], color)
-                    val rk = cell[0] * 100 + cell[1]
-                    map[rk] = (map[rk] ?: 0) or (1 shl d)
-                }
+                if (gi >= 0) prog.add(gi)
             }
-            reach.add(map)
+            colors.add(color)
+            oppTrack.add(prog.toIntArray())
+            oppHome.add(home)
         }
-
-        fun danger(key: Int): Double {
-            var safe = 1.0
-            for (m in reach) safe *= 1.0 - Integer.bitCount(m[key] ?: 0) / 6.0
-            return 1.0 - safe
-        }
-
-        var onBoard = 0
-        for (b in blue) { if (pathIndex(g, b) >= 0) onBoard++ }
-
-        var best: Move? = null
-        var bestScore = -1.0e9
-        for (b in blue) {
-            val i = pathIndex(g, b)
+        val idx = ArrayList<Int>()
+        val mine = ArrayList<Int>()
+        for (k in blue.indices) {
+            val i = pathIndex(g, blue[k])
             if (i == -2) continue
-            val j: Int
-            if (i == -1) {
-                if (dice != 6) continue
-                j = 0
-            } else {
-                j = i + dice
-                if (j > FINISH_INDEX) continue
-            }
-            val cell = BLUE_PATH[j]
-            val key = cell[0] * 100 + cell[1]
-            val safe = SAFE.contains(key)
-            val onTrack = j <= 50
-            val stake = 10.0 + (if (onTrack) j else 50).toDouble()
-            var score = 0.0
-
-            if (i == -1) score += if (onBoard == 0) 70.0 else 55.0
-
-            val v = victim[key]
-            // Capturing an opponent is a major tactical gain: prioritize it over
-            // ordinary progress, while still respecting safe cells and legal moves.
-            if (v != null && !safe && onTrack) score += 260.0 + v * 2.0
-
-            if (j == FINISH_INDEX) score += 90.0
-            else if (j >= 51 && i in 0..50) score += 35.0
-
-            if (safe && onTrack && v == null) score += 18.0
-            if (onTrack && !safe) score -= danger(key) * stake * 1.6
-
-            if (i in 0..50) {
-                val curCell = BLUE_PATH[i]
-                val curKey = curCell[0] * 100 + curCell[1]
-                if (!SAFE.contains(curKey)) score += danger(curKey) * (10.0 + i) * 1.4
-            }
-
-            if (onTrack) {
-                for (t in oppOnBlue) {
-                    if (t > j && t - j <= 6) { score += 4.0; break }
-                }
-            }
-
-            score += dice * 0.4 + (if (i >= 0) i * 0.03 else 0.0)
-
-            if (score > bestScore) {
-                bestScore = score
-                best = Move(i, b.x, b.y - TAP_LIFT * g.sc)
-            }
+            idx.add(k)
+            mine.add(i)
         }
-        return best
+        if (mine.isEmpty()) return null
+        val pick = LudoBrain.choose(mine.toIntArray(), colors.toIntArray(), oppTrack.toTypedArray(), oppHome.toIntArray(), dice)
+        if (pick < 0) return null
+        val piece = blue[idx[pick]]
+        return Move(mine[pick], piece.x, piece.y - TAP_LIFT * g.sc)
     }
 
     // ---------------------------------------------------------------- pixel helpers

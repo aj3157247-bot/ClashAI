@@ -40,7 +40,7 @@ object PieceClassifier {
     private const val MAX_DIST = 1.6f
 
     /** and when the closest template is clearly better than the second one. */
-    private const val MIN_RATIO = 2.0f
+    private const val MIN_RATIO = 1.5f
 
     private const val PREFS = "ai_player_chess_templates"
     private const val KEY = "learned"
@@ -80,7 +80,15 @@ object PieceClassifier {
         return out
     }
 
-    private fun templates(): Array<FloatArray> = learned ?: builtin
+    /**
+     * Built-in templates are always used. Templates learned from the start position are added, never instead:
+     * the start position shows the queens and kings on one square color only, so templates learned from it alone
+     * fail when a queen or king later stands on the other color (this made the bot lose a game in progress).
+     */
+    private fun templateSets(): List<Array<FloatArray>> {
+        val l = learned
+        return if (l != null) listOf(builtin, l) else listOf(builtin)
+    }
 
     // ------------------------------------------------------------------ persistence
 
@@ -201,14 +209,18 @@ object PieceClassifier {
      * Returns the signed engine piece (+1..+6 white, -1..-6 black) or 0 when this is not a known piece
      * (an unknown piece set, a half hidden piece...). `white` = the side already decided from brightness.
      */
-    fun classify(f: FloatArray, white: Boolean, hint: Boolean = false): Int {
-        val t = templates()
+    fun classify(f: FloatArray, white: Boolean, hint: Boolean = false, strict: Boolean = false): Int {
+        val sets = templateSets()
         val base = if (white) 0 else 6
         var best = -1
         var bestD = Float.MAX_VALUE
         var second = Float.MAX_VALUE
         for (k in 0..5) {
-            val d = dist(f, t[base + k], hint)
+            var d = Float.MAX_VALUE
+            for (t in sets) {
+                val dk = dist(f, t[base + k], hint)
+                if (dk < d) d = dk
+            }
             if (d < bestD) {
                 second = bestD
                 bestD = d
@@ -218,9 +230,13 @@ object PieceClassifier {
             }
         }
         // With a hint diamond only 5 of the 10 grid rows are compared, so the limit is lower.
-        val limit = if (hint) MAX_DIST * 0.5f else MAX_DIST
+        // strict = used to correct a position that is already tracked (must be very sure);
+        // lenient = used to read a whole position from the screen (a wrong guess is better than giving up).
+        val maxDist = if (strict) 1.2f else MAX_DIST
+        val ratio = if (strict) 2.0f else MIN_RATIO
+        val limit = if (hint) maxDist * 0.5f else maxDist
         if (best < 0 || bestD > limit) return 0
-        if (second < bestD * MIN_RATIO) return 0
+        if (second < bestD * ratio) return 0
         val code = best + 1
         return if (white) code else -code
     }

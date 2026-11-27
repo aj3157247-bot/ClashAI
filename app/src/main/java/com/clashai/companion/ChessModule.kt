@@ -640,6 +640,13 @@ class ChessModule : GameModule {
             return GameAction.Wait
         }
 
+        // Fix piece kinds that the tracker got wrong (see reconcileKinds).
+        val fixed = reconcileKinds(p)
+        if (fixed !== p) {
+            p = fixed
+            pos = p
+        }
+
         // When the position was read from the screen, castling rights are only a guess. If the same move keeps
         // failing, the game probably refuses it: forget the castling rights and choose another move.
         if (bootstrapped && stuck >= 3 && p.castle != 0) {
@@ -675,6 +682,38 @@ class ChessModule : GameModule {
         return GameAction.Tap(first[0] / cachedW.coerceAtLeast(1), first[1] / cachedH.coerceAtLeast(1))
     }
 
+    /**
+     * The tracker follows moves by occupancy and color only, so it can end up with a wrong piece KIND
+     * (the opponent promoted to a knight, a piece was misread when the bot joined the game...). Then the real
+     * opponent move looks illegal and the bot is lost. On our turn the kinds are compared with what the screen shows
+     * (strict classifier) and corrected. Kings are never changed; at most 3 corrections per look.
+     */
+    private fun reconcileKinds(p: ChessPos): ChessPos {
+        val px = cachedPx ?: return p
+        val g = geo ?: return p
+        val obs = obsFor(mode)
+        val colors = PieceClassifier.squareColors(px, cachedW, cachedH, g)
+        val board = p.sq.copyOf()
+        var fixes = 0
+        for (i in 0..63) {
+            if (!obs.occ[i]) continue
+            val sq = engineSq(i / 8, i % 8)
+            val cur = board[sq].toInt()
+            if (cur == 0) continue
+            if (abs(cur) == Chess.K) continue
+            val f = PieceClassifier.features(px, cachedW, cachedH, g, i / 8, i % 8, colors)
+            val hint = PieceClassifier.hintOnSquare(px, cachedW, cachedH, g, i / 8, i % 8)
+            val seen = PieceClassifier.classify(f, cur > 0, hint, true)
+            if (seen == 0 || seen == cur || abs(seen) == Chess.K) continue
+            if (abs(seen) == Chess.P && (sq < 8 || sq >= 56)) continue
+            board[sq] = seen.toByte()
+            fixes++
+        }
+        if (fixes == 0 || fixes > 3) return p
+        AdviceLog.info("شطرنج: نوع $fixes مهره از روی صفحه اصلاح شد")
+        return ChessPos(board, p.whiteToMove, p.castle, p.ep)
+    }
+
     private fun isStartPos(p: ChessPos): Boolean {
         val s = Chess.startPos()
         if (p.whiteToMove != s.whiteToMove || p.castle != 15) return false
@@ -688,7 +727,7 @@ class ChessModule : GameModule {
         private const val SETTLE_MS = 1300L
         private const val THINK_MS = 2000L
         private const val LOST_AFTER = 14
-        private const val RESYNC_AFTER = 4
+        private const val RESYNC_AFTER = 3
         private const val BOOTSTRAP_GAP_MS = 1500L
         private const val MAX_PLIES = 3
         private const val SAT_LIMIT = 45

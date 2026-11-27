@@ -84,6 +84,12 @@ class TouchMarkerView(
         // Stays fully visible for most of its life, then fades out.
         val fade = if (p > 0.8f) (1f - p) / 0.2f else 1f
 
+        // The overlay window may start below the status bar or camera cut-out. Without this correction the
+        // marker was drawn about 60 pixels lower than the real touch (the real touch was right, the picture was not).
+        val loc = IntArray(2)
+        getLocationOnScreen(loc)
+        canvas.translate(-loc[0].toFloat(), -loc[1].toFloat())
+
         for (i in items.indices) {
             val m = items[i]
             val c = colorOf(m.kind)

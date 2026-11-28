@@ -30,6 +30,8 @@ class BotHud(private val service: AutoPlayAccessibilityService) {
     private var title: TextView? = null
     private var status: TextView? = null
     private var toggle: Button? = null
+    private var learnBtn: Button? = null
+    private var playBtn: Button? = null
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -115,6 +117,37 @@ class BotHud(private val service: AutoPlayAccessibilityService) {
         rowLp.topMargin = dp(8)
         panel.addView(row, rowLp)
 
+        // Learning: "Learn" = I play and the bot watches; "Play" = the bot plays with what it learned.
+        val row2 = LinearLayout(service)
+        row2.orientation = LinearLayout.HORIZONTAL
+        val lb = Button(service)
+        lb.textSize = 12f
+        lb.setTextColor(Color.WHITE)
+        lb.minHeight = 0
+        lb.minimumHeight = 0
+        lb.setPadding(dp(6), dp(6), dp(6), dp(6))
+        lb.setOnClickListener {
+            if (LearningCoach.learning) service.stopLearningSession() else service.startLearningSession()
+            refresh()
+        }
+        row2.addView(lb, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val pb = Button(service)
+        pb.textSize = 12f
+        pb.setTextColor(Color.WHITE)
+        pb.minHeight = 0
+        pb.minimumHeight = 0
+        pb.setPadding(dp(6), dp(6), dp(6), dp(6))
+        pb.setOnClickListener {
+            if (LearningCoach.playing) service.stopPlayingSession() else service.startPlayingSession()
+            refresh()
+        }
+        val pbLp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        pbLp.marginStart = dp(8)
+        row2.addView(pb, pbLp)
+        val row2Lp = LinearLayout.LayoutParams(dp(236), LinearLayout.LayoutParams.WRAP_CONTENT)
+        row2Lp.topMargin = dp(6)
+        panel.addView(row2, row2Lp)
+
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -169,6 +202,8 @@ class BotHud(private val service: AutoPlayAccessibilityService) {
         title = t
         status = s
         toggle = b
+        learnBtn = lb
+        playBtn = pb
         refresh()
         handler.postDelayed(ticker, REFRESH_MS)
     }
@@ -195,13 +230,28 @@ class BotHud(private val service: AutoPlayAccessibilityService) {
         title = null
         status = null
         toggle = null
+        learnBtn = null
+        playBtn = null
     }
 
     private fun refresh() {
         val running = AgentLoop.isRunning()
         dot?.background = round(if (running) Color.rgb(0, 220, 90) else Color.rgb(240, 60, 60), Color.WHITE, 8, 0)
-        title?.text = "AI Player · " + AiSettings.modeLabel()
+        title?.text = "AI Player · " + AiSettings.modeLabel() +
+            (if (LearningCoach.learning) " · یادگیری" else if (LearningCoach.playing) " · با یادگیری" else "")
         status?.text = AdviceLog.lastText.take(280)
+        val lb = learnBtn
+        if (lb != null) {
+            val on = LearningCoach.learning
+            lb.text = if (on) "پایان یادگیری (${LearningCoach.sessionCount})" else "یادگیری"
+            lb.background = round(if (on) Color.rgb(200, 120, 0) else Color.rgb(40, 90, 170), Color.TRANSPARENT, 10, 0)
+        }
+        val pb = playBtn
+        if (pb != null) {
+            val on = LearningCoach.playing
+            pb.text = if (on) "توقف بازی" else "بازی با یادگیری"
+            pb.background = round(if (on) Color.rgb(200, 45, 45) else Color.rgb(110, 60, 170), Color.TRANSPARENT, 10, 0)
+        }
         val b = toggle
         if (b != null) {
             b.text = if (running) "توقف ربات" else "شروع بازی"

@@ -52,6 +52,60 @@ class AutoPlayAccessibilityService : AccessibilityService() {
 
     fun isHudShown(): Boolean = hud?.isShown() == true
 
+    // ---------------------------------------------------------------- learning
+
+    private var learnOverlay: LearnOverlay? = null
+
+    /** Display size in pixels (the space of screenshots and gestures). */
+    fun displaySizePx(): FloatArray = displaySize()
+
+    /** Shows or removes the transparent layer that records the user's touches. */
+    fun setLearnCapture(on: Boolean) {
+        mainHandler.post {
+            if (on) {
+                if (learnOverlay == null) learnOverlay = LearnOverlay(this)
+                learnOverlay?.show()
+                // The control panel must stay above the layer, otherwise its buttons could not be pressed.
+                val h = hud
+                if (h != null && h.isShown()) {
+                    h.hide()
+                    h.show()
+                }
+            } else {
+                learnOverlay?.hide()
+                learnOverlay = null
+            }
+        }
+    }
+
+    /** Learn mode: the user plays, the bot watches. */
+    fun startLearningSession() {
+        LearningCoach.startLearning()
+        setLearnCapture(true)
+        if (!AgentLoop.isRunning()) AgentLoop.start()
+        AdviceLog.info("حالت یادگیری روشن شد؛ خودت بازی کن. من فقط نگاه می‌کنم و یاد می‌گیرم")
+    }
+
+    fun stopLearningSession() {
+        LearningCoach.stopLearning()
+        setLearnCapture(false)
+        AgentLoop.stop()
+        AdviceLog.info("یادگیری تمام شد (${LearningCoach.sessionCount} لمس ثبت شد)")
+    }
+
+    /** Play mode: the bot plays with what it learned. */
+    fun startPlayingSession() {
+        LearningCoach.startPlaying()
+        setLearnCapture(false)
+        if (!AgentLoop.isRunning()) AgentLoop.start()
+        AdviceLog.info("بازی با یادگیری روشن شد")
+    }
+
+    fun stopPlayingSession() {
+        LearningCoach.stopPlaying()
+        AgentLoop.stop()
+    }
+
     /** Last app (other than this one) that opened a window. Used when the floating panel steals the "active window". */
     @Volatile private var lastForeign: String? = null
 
@@ -66,6 +120,8 @@ class AutoPlayAccessibilityService : AccessibilityService() {
     override fun onDestroy() {
         if (instance === this) instance = null
         try {
+            LearningCoach.stopLearning()
+            learnOverlay?.hide()
             hud?.hide()
         } catch (e: Exception) {
             // ignore

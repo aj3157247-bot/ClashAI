@@ -51,6 +51,11 @@ object AgentLoop {
 
     fun stop() {
         running = false
+        if (LearningCoach.learning) {
+            LearningCoach.stopLearning()
+            AutoPlayAccessibilityService.instance?.setLearnCapture(false)
+        }
+        if (LearningCoach.playing) LearningCoach.stopPlaying()
         handler.removeCallbacks(tick)
         // Invalidate any callback that may arrive after Stop.
         captureToken++
@@ -128,6 +133,11 @@ object AgentLoop {
 
         val frame = FrameBus.take() ?: return
         try {
+            if (LearningCoach.learning) {
+                // Learn mode: only watch. The user plays; the bot never touches the screen.
+                LearningCoach.onFrame(pkg, frame)
+                return
+            }
             val module = GameRegistry.find(pkg, frame)
             if (module == null) {
                 DebugDump.save(frame, "no_module")

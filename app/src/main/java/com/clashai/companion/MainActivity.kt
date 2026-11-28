@@ -297,6 +297,28 @@ fun UniversalGameAI() {
                 Text("تصمیم هوش مصنوعی: $adviceText")
 
                 HorizontalDivider()
+                Text("موتور یادگیری: خودت بازی کن تا ربات یاد بگیرد، بعد به‌جای تو بازی کند. دکمه‌های «یادگیری» و «بازی با یادگیری» روی پنل شناور هستند.")
+                Button(
+                    onClick = {
+                        val svc = AutoPlayAccessibilityService.instance
+                        if (svc == null) {
+                            status = "سرویس دسترسی فعال نیست"
+                            return@Button
+                        }
+                        svc.showHud()
+                        status = "پنل شناور باز شد؛ به بازی برو و روی «یادگیری» بزن"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("نمایش پنل یادگیری") }
+                OutlinedButton(
+                    onClick = {
+                        LearningCoach.clearAll()
+                        status = "حافظه‌ی یادگیری پاک شد"
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("پاک کردن حافظه‌ی یادگیری") }
+
+                HorizontalDivider()
                 Text("وضعیت: $status")
                 Text("ربات: ${if (agentOn) "در حال اجرا" else "متوقف"}")
                 Text("ماژول‌ها: لودو و شطرنج (محلی)؛ هوش مصنوعی ابری در حالت آنلاین و هوشمند")

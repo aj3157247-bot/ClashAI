@@ -37,6 +37,8 @@ class GrokGameModule : GameModule {
     /** Notes the AI keeps for itself between requests (opponent cards seen, elixir estimate...). */
     @Volatile private var memo: String = ""
     @Volatile private var backoffUntil = 0L
+    private var lastCoachAt = 0L
+    private var coachWaitSince = 0L
 
     private var lastRequestAt = 0L
 
@@ -50,10 +52,14 @@ class GrokGameModule : GameModule {
     @Volatile private var awaitingEffect = false
 
     override fun matches(packageName: String?, frame: Bitmap): Boolean {
-        if (!AiSettings.cloudAllowed() || (AiSettings.apiKey.isBlank() && !AiSettings.hasBackup())) return false
+        // While the bot plays with what it learned, this module also works without a cloud key (pure imitation).
+        if (!LearningCoach.playing && !hasCloud()) return false
         if (packageName != currentPackage) resetFor(packageName)
         return true
     }
+
+    private fun hasCloud(): Boolean =
+        AiSettings.cloudAllowed() && (AiSettings.apiKey.isNotBlank() || AiSettings.hasBackup())
 
     private fun resetFor(packageName: String?) {
         currentPackage = packageName
@@ -93,6 +99,36 @@ class GrokGameModule : GameModule {
 
         // 2) Ask the AI again only when it makes sense.
         if (pending) return GameAction.Wait
+
+        // 2a) Play with what the engine learned: a known screen is answered at once, without the cloud.
+        var coach: LearningCoach.CoachResult? = null
+        if (LearningCoach.playing) {
+            if (now - lastActionAt < COACH_GAP_MS || now - lastCoachAt < 300L) return GameAction.Wait
+            lastCoachAt = now
+            val res = LearningCoach.analyse(currentPackage, frame)
+            coach = res
+            val act = res.action
+            if (act != null) {
+                lastActionAt = now
+                coachWaitSince = 0L
+                LearningCoach.noteExecuted(currentPackage, res)
+                AdviceLog.info("یادگیری: حرکت آموخته‌شده اجرا شد (اطمینان ${(res.confidence * 100).toInt()}٪)")
+                return act
+            }
+            if (res.wait) {
+                if (coachWaitSince == 0L) coachWaitSince = now
+                if (now - coachWaitSince < COACH_WAIT_MAX_MS) {
+                    AdviceLog.info("یادگیری: روی این صفحه خودت هم صبر می‌کردی؛ منتظر می‌مانم")
+                    return GameAction.Wait
+                }
+            } else {
+                coachWaitSince = 0L
+            }
+            if (!hasCloud()) {
+                AdviceLog.info("یادگیری: این صفحه را قبلاً ندیده‌ام و هوش مصنوعی ابری خاموش است؛ چند بار خودت روی آن بازی کن")
+                return GameAction.Wait
+            }
+        }
         if (now - lastActionAt < (if (AiSettings.realtime) 200L else SETTLE_MS)) return GameAction.Wait
         val royale = gameId == "clashroyale"
         // Free API plans allow only a limited number of requests and tokens per minute. Asking too often makes every
@@ -142,7 +178,8 @@ class GrokGameModule : GameModule {
                 (if (elixir >= 9.5f) "The bar is full: play a card now, wasting elixir is a mistake. " else "") +
                 "Only cards whose cost is at most %d can be played now. ".format(elixir.toInt())
         else ""
-        val hint = elixirHint + if (waitStreak >= 2 && !royale)
+        val coachHint = coach?.hint ?: ""
+        val hint = coachHint + (if (coachHint.isNotEmpty()) " " else "") + elixirHint + if (waitStreak >= 2 && !royale)
             "The last answers were wait. If a roll, play, pass, end-turn, continue or next button is visible and it is the player's turn, tap it now. Do not answer wait."
         else ""
         val board = if (royale) null else findBoard(frame)
@@ -153,6 +190,7 @@ class GrokGameModule : GameModule {
 
         // The frame is recycled by AgentLoop after this call, so render a copy for the worker.
         val image = GridOverlay.render(frame, if (royale) 600 else if (AiSettings.realtime) 720 else 1080, grid, board)
+        val coachDesc = coach?.desc
         val sentW = image.width.toFloat()
         val sentH = image.height.toFloat()
         val frameW = frame.width.toFloat()
@@ -172,6 +210,7 @@ class GrokGameModule : GameModule {
                 var actions: List<GameAction> = planned.map { it.second }
                 val offsets: List<Long> = planned.map { it.first }
                 if (!advice.myTurn) actions = emptyList()
+                if (LearningCoach.playing) LearningCoach.noteCloud(currentPackage, coachDesc, actions.firstOrNull())
 
                 adaptiveGapMs = adaptiveGapMs * 9L / 10L
                 waitStreak = if (actions.isEmpty()) waitStreak + 1 else 0
@@ -263,7 +302,9 @@ class GrokGameModule : GameModule {
             return GameAction.Swipe(from[0], from[1], tx, ty, 280L)
         }
 
-        val p1 = snap(norm(s.x, imageW), norm(s.y, imageH))
+        val p1raw = snap(norm(s.x, imageW), norm(s.y, imageH))
+        // Pull the touch onto the control that the user really presses (not on a board: there the cells are exact).
+        val p1 = if (board == null) (LearningCoach.snap(currentPackage, p1raw[0], p1raw[1]) ?: p1raw) else p1raw
         return when (s.type) {
             "tap" -> GameAction.Tap(p1[0], p1[1])
             "hold" -> GameAction.Hold(p1[0], p1[1], if (s.ms > 0L) s.ms else 500L)
@@ -349,6 +390,8 @@ class GrokGameModule : GameModule {
     }
 
     companion object {
+        private const val COACH_GAP_MS = 700L
+        private const val COACH_WAIT_MAX_MS = 25_000L
         private const val ACTION_GAP_MS = 900L
         private const val SETTLE_MS = 1500L
         private const val HEARTBEAT_MS = 12000L

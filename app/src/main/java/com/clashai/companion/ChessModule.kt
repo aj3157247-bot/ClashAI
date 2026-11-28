@@ -48,6 +48,8 @@ class ChessModule : GameModule {
     private var pos: ChessPos? = null
     private val history = ArrayList<ChessPos>()
     private var weWhite = true
+    private var lastChangeAt = 0L          // last time the screen changed (a move was seen, or the position was read)
+    private var lastSaidAt = 0L
     private var orientationKnown = false   // true once the start of this game was seen
     private var flipped = false
     private var threshold = 0
@@ -499,6 +501,7 @@ class ChessModule : GameModule {
         stuck = 0
         lastPlanned = -1
         bootstrapped = true
+        lastChangeAt = System.currentTimeMillis()
         val side = if (weWhite) "سفید" else "سیاه"
         val turn = if (whiteToMove == weWhite) "نوبت من است" else "نوبت حریف است"
         AdviceLog.info("شطرنج: همه‌ی مهره‌ها از روی صفحه خوانده شد؛ من $side هستم و $turn")
@@ -593,6 +596,7 @@ class ChessModule : GameModule {
                 weWhite = start[2] == 1
                 flipped = !weWhite
                 orientationKnown = true
+                lastChangeAt = now
                 pos = Chess.startPos()
                 history.clear()
                 mismatch = 0
@@ -617,6 +621,7 @@ class ChessModule : GameModule {
         // Follow the game: find the legal move(s) that explain what the screen shows.
         val observed = observedBoard(obsFor(mode))
         val found = follow(p, observed, if (mismatch >= 2) MAX_PLIES else 2)
+        if (found != null && found.plies > 0) lastChangeAt = now
         if (found == null) {
             val back = rollback(observed)
             if (back != null) {
@@ -660,8 +665,22 @@ class ChessModule : GameModule {
         mismatch = 0
 
         if (p.whiteToMove != weWhite) {
-            nextAt = now + 350L
-            return GameAction.Wait
+            // If the screen has not changed for a long time, the turn guess may simply be wrong (the "last move"
+            // marks can be misleading). A real opponent move changes the screen, so after the timeout assume it is
+            // our turn. If the opponent is just slow, our touches do nothing and the tracker keeps working.
+            if (now - lastChangeAt > OPPONENT_TIMEOUT_MS) {
+                AdviceLog.info("شطرنج: مدت زیادی حرکتی نشده؛ فرض می‌کنم نوبت من است")
+                p = ChessPos(p.sq, weWhite, p.castle, p.ep)
+                pos = p
+                lastChangeAt = now
+            } else {
+                if (now - lastSaidAt > 4000L) {
+                    lastSaidAt = now
+                    AdviceLog.info("شطرنج: نوبت حریف است، منتظرم")
+                }
+                nextAt = now + 350L
+                return GameAction.Wait
+            }
         }
 
         // Fix piece kinds that the tracker got wrong (see reconcileKinds).
@@ -832,6 +851,7 @@ class ChessModule : GameModule {
         private const val THINK_MS = 2000L
         private const val LOST_AFTER = 14
         private const val RESYNC_AFTER = 3
+        private const val OPPONENT_TIMEOUT_MS = 20000L
         private const val BOOTSTRAP_GAP_MS = 1500L
         private const val MAX_PLIES = 3
         private const val SAT_LIMIT = 45

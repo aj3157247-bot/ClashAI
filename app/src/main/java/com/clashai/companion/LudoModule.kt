@@ -24,6 +24,7 @@ class LudoModule : GameModule {
     private var phase = Phase.ROLL
     private var nextAt = 0L
     private var readFails = 0
+    private var turnFails = 0
 
     // The registry calls matches() and then decide() with the same bitmap; do the work once.
     private var cachedFrame: Bitmap? = null
@@ -100,11 +101,21 @@ class LudoModule : GameModule {
         // phase == READ: the dice has settled, read it and play.
         val myTurn = if (die.fourPlayer) die.present else dieIsBlueLegacy(img)
         if (!myTurn) {
+            // While the die is still rolling its colors change for a moment and look like the opponent's die.
+            // Look again a few times before deciding that it is not our turn.
+            turnFails++
+            if (turnFails < 4) {
+                nextAt = now + 450L
+                AdviceLog.info("لودو: تاس هنوز نچرخیده یا نوبت حریف است؛ دوباره نگاه می‌کنم")
+                return GameAction.Wait
+            }
+            turnFails = 0
             phase = Phase.ROLL
             nextAt = now + NOT_MY_TURN_MS
             AdviceLog.info("لودو: نوبت حریف است، صبر می‌کنم")
             return GameAction.Wait
         }
+        turnFails = 0
 
         val dice = if (die.fourPlayer) readDicePanel(img, die) else readDiceLegacy(img)
         if (dice == 0) {

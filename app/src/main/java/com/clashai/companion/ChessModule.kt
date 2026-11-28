@@ -48,6 +48,7 @@ class ChessModule : GameModule {
     private var pos: ChessPos? = null
     private val history = ArrayList<ChessPos>()
     private var weWhite = true
+    private var orientationKnown = false   // true once the start of this game was seen
     private var flipped = false
     private var threshold = 0
     private var mode = 0          // 0 = ignore strongly colored overlay pixels, 1 = count every pixel
@@ -406,9 +407,31 @@ class ChessModule : GameModule {
                 if (i / 8 <= 3) brightTop++ else brightBottomCount++
             }
         }
-        // Which army stands at the bottom of the screen? The kings tell it best; otherwise count the pieces.
-        val brightBottom = if (brightKingRow >= 0 && darkKingRow >= 0 && brightKingRow != darkKingRow)
-            brightKingRow > darkKingRow
+        // Which army stands at the bottom of the screen (= the army we play)?
+        //  1. If we saw this game start, we know it: the board never turns around during a game.
+        //  2. Otherwise the pawns tell it: they only move forward, so under the right guess they have advanced less.
+        //     (The old rule "compare the king rows" was wrong in endgames, where the kings leave their home rows;
+        //     the bot then believed it was playing the opponent's army and moved the opponent's pieces.)
+        //  3. Last resort: the kings, then the piece count.
+        var advBottom = 0
+        var advTop = 0
+        var pawnCount = 0
+        for (i in 0..63) {
+            val k = kind[i]
+            if (k != Chess.P && k != -Chess.P) continue
+            val row = i / 8
+            pawnCount++
+            if (k > 0) {
+                advBottom += 6 - row
+                advTop += row - 1
+            } else {
+                advBottom += row - 1
+                advTop += 6 - row
+            }
+        }
+        val brightBottom = if (orientationKnown) weWhite
+        else if (pawnCount >= 3 && abs(advBottom - advTop) >= 6) advBottom < advTop
+        else if (brightKingRow >= 0 && darkKingRow >= 0 && brightKingRow != darkKingRow) brightKingRow > darkKingRow
         else brightBottomCount >= brightTop
         val flip = !brightBottom
 
@@ -569,6 +592,7 @@ class ChessModule : GameModule {
                 threshold = start[1]
                 weWhite = start[2] == 1
                 flipped = !weWhite
+                orientationKnown = true
                 pos = Chess.startPos()
                 history.clear()
                 mismatch = 0
